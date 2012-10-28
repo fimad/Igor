@@ -49,7 +49,8 @@
   pages={58 -65}, 
   annotate = "
       Surveys common approaches to breaking DRM and copy protection mechanisms and software.
-      Suggests that incorporating metamorphic techniques inspired by malware may result in more robust protection schemes.
+      Proposes that incorporating metamorphic techniques inspired by malware may result in more robust protection schemes.
+      Suggests that work on improving metamorphic techniques may have legitimate applications under DRM and copy protection.
     "
 }
 
@@ -84,19 +85,122 @@
     "
 }
 
-@article {springerlink:10.1007/s11416-010-0148-y,
-   author = {Lin, Da and Stamp, Mark},
-   affiliation = {Cisco Systems, Inc., San Jose, CA, USA},
-   title = {Hunting for undetectable metamorphic viruses},
-   journal = {Journal in Computer Virology},
-   publisher = {Springer Paris},
-   issn = {1772-9890},
-   keyword = {Computer Science},
-   pages = {201-214},
-   volume = {7},
-   issue = {3},
-   url = {http://dx.doi.org/10.1007/s11416-010-0148-y},
-   note = {10.1007/s11416-010-0148-y},
-   year = {2011}
+@article{hmm_detect,
+  author = {Stamp, Mark and Wong, Wing},
+  title = {Hunting for metamorphic engines},
+  journal = {Journal in Computer Virology},
+  volume = {2},
+  number = {3},
+  pages = {211-229},
+  month = {December},
+  year = {2006},
+  URL = {http://www.truststc.org/pubs/237.html},
+  annotate = "
+      Presents a model using HMM's that can reliably detect metamorphic variants of a program.
+      Even highly metamorphic variants, like those produced by the NGVCK virus generator, can be detected due to their dissimilarity to benign programs.
+      Conclude that successful metamorphic engines must while producing highly variant versions, must also produce variants that share statistical properties with normal programs.
+    "
 }
 
+
+@article { hmm_evade,
+  author = {Lin, Da and Stamp, Mark},
+  affiliation = {Cisco Systems, Inc., San Jose, CA, USA},
+  title = {Hunting for undetectable metamorphic viruses},
+  journal = {Journal in Computer Virology},
+  publisher = {Springer Paris},
+  pages = {201-214},
+  volume = {7},
+  issue = {3},
+  year = {2011},
+  annotate = "
+      Presents a method for generating metamorphic variants that can evade the system presented in \cite{hmm_detect}.
+      The method described in the paper suggests that simply copying subroutines from known benign programs may sufficient to evade statistical static analysis.
+    "
+}
+
+@INPROCEEDINGS{histogram, 
+  author={Rad, Babak Bashari and Masrom, Maslin and Ibrahim, Suahimi}, 
+  booktitle={e-Learning and e-Technologies in Education (ICEEE), 2012 International Conference on},
+  title={Opcodes histogram for classifying metamorphic portable executables malware}, 
+  year={2012}, 
+  month={sept.}, 
+  volume={}, 
+  number={}, 
+  pages={209 -213}, 
+  annotate = "
+      Presents an implementation of an opcode histogram based malware classifier.
+      Using real world metamorphic engines shows that even given the high degree of dissimilarity in opcode sequences between metamorphic variations, they typically have a similar distribution of opcode frequencies.  
+      Suggests that a robust metamorphic engine would generate variants with substantial differences in opcode frequencies.
+    "
+}
+
+@article {chisquared,
+  author = {Toderici, Annie and Stamp , Mark},
+  affiliation = {Department of Computer Science, San Jose State University, San Jose, CA, USA},
+  title = {Chi-squared distance and metamorphic virus detection},
+  journal = {Journal in Computer Virology},
+  publisher = {Springer Paris},
+  pages = {1-14},
+  year ={ 2012},
+  annotate = "
+    Proposes a modification to the HMM based system first presented in \cite{hmm_detect} that is robust to the metamorphic techniques presented in \cite{hmm_evade}.
+    The new system combines the HMM classifier with one based on Chi-squared distance to create a hybrid system that is able to detect malware with large contiguous segments of benign code interspersed throughout it.
+  "
+}
+
+@inproceedings{simile,
+    author = {Beaucamps, Philippe}
+  , title = {Advanced Polymorphic Techniques}
+  , booktitle = {World Academy of Science, Engineering And Technology}
+  , year = {2007}
+  , month = {November}
+  , volume = {25}
+  , annotate = "
+      A case study of the then most advanced metamorphic virus to date, MetaPHOR.
+      MetaPHOR implements several complex metamorphic transformations including modifying its memory access profile, code permutation and instruction modification.
+      The analysis of the techniques used in MetaPHOR will be useful as inspiration and starting points when investigating functional polymorphic transformations.
+    "
+}
+
+@inproceedings{controlflow,
+  author = {Wang, Chenxi and Hill, Jonathan and Knight, John C. and Davidson, Jack W.},
+  booktitle = {DSN},
+  pages = {193-202},
+  publisher = {IEEE Computer Society},
+  title = {Protection of Software-Based Survivability Mechanisms.},
+  year = 2001,
+  annotate = "
+      Presents a method of control flow obfuscation by flattening the basic block graph flow graph.
+      The method involves replacing direct branching between basic blocks with data-dependent branches through the use of a dispatching switch statement.
+      The authors also show that the analysis of such an obfuscated program is NP-hard.
+      \par
+      The dispatcher based control flow shown in this paper along with being difficult to analyze may provide a flexible framework for building more complex metamorphic control flow transformations.
+    "
+}
+
+@INPROCEEDINGS{mimcry,
+  author = {David Wagner},
+  title = {Mimicry Attacks on Host-Based Intrusion Detection Systems},
+  booktitle = {In Proceedings of the 9th ACM Conference on Computer and Communications Security},
+  year = {2002},
+  pages = {255--264},
+  publisher = {ACM Press},
+  annotate = "
+      The paper describes mimicry attacks which can be used to bypass detection by anomaly based intrusion detection systems.
+      The attacks described in the paper involve interspersing ``no-op'' syscalls between malicious ones.
+      This paper presents an early foundation for work in \cite{mimimorph} and suggests that the noise provided by ``no-op'' syscalls may be sufficient in evading syscall based detection systems.
+    "
+}
+
+@INPROCEEDINGS{scenario_opt, 
+  author={Mars, J. and Hundt, R.}, 
+  booktitle={Code Generation and Optimization, 2009. CGO 2009. International Symposium on},
+  title={Scenario Based Optimization: A Framework for Statically Enabling Online Optimizations}, 
+  year={2009}, 
+  month={march}, 
+  pages={169 -179}, 
+  annotate = "
+      
+    "
+}

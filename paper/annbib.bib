@@ -1,0 +1,102 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Polymorphism
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+@article{polyfunc,
+    author = {Jacob, Grégoire and Filiol,Eric and Debar, Hervé}
+  , title = {Functional polymorphic engines: formalisation, implementation and use cases}
+  , journal = {Journal in Computer Virology}
+  , volume = {5}
+  , number = {3}
+  , pages = {247--261}
+  , year = {2009}
+  , annotate = "
+      Presents theoretical foundations rooted in compiler theory for generating multiple semantically equivalent variations of a program. 
+      Theoretically, a functional polymorphic engine parses a set of abstract ``behaviours'' and given a predefined attribute grammar, non-deterministically expands the behaviours into concrete operations.
+      The prototype implementation is fairly limited, defining 4 behaviours, and a set of handwritten assembly building blocks corresponding to each behaviour.
+      \par
+      This paper suggests the relevance of non-deterministic compilers to the generation of metamorphic and polymorphic code. 
+    "
+}
+
+@inproceedings{mimimorph,
+  author = {Wu, Zhenyu and Gianvecchio, Steven and Xie, Mengjun and Wang, Haining},
+  title = {Mimimorphism: a new approach to binary code obfuscation},
+  booktitle = {Proceedings of the 17th ACM conference on Computer and communications security},
+  series = {CCS '10},
+  year = {2010},
+  location = {Chicago, Illinois, USA},
+  pages = {536--546},
+  publisher = {ACM},
+  address = {New York, NY, USA},
+  annotate = "
+      Presents a new method of binary obfuscation, mimimorphism, that can thwart both static and dynamic analysis.
+      The process involves altering statistical properties of the target binary to match those of a benign program.
+      The result is a malicious program that has benign appearing opcode frequencies and sequences, that also exhibits known benign syscall traces.
+      \par
+      The techniques employed in the paper for preserving the semantic properties of the target program while incorporating statistical properties of benign programs may prove useful in the automatic generation of semantically equivalent building blocks for use in functional polymorphic engines.
+    "
+} 
+
+@ARTICLE{drm_paper, 
+  author={Dube, T.E. and Birrer, B.D. and Raines, R.A. and Baldwin, R.O. and Mullins, B.E. and Bennington, R.W. and Reuter, C.E.}, 
+  journal={Security Privacy, IEEE},
+  title={Hindering Reverse Engineering: Thinking Outside the Box}, 
+  year={2008}, 
+  month={March-April }, 
+  volume={6}, 
+  number={2}, 
+  pages={58 -65}, 
+  annotate = "
+      Surveys common approaches to breaking DRM and copy protection mechanisms and software.
+      Suggests that incorporating metamorphic techniques inspired by malware may result in more robust protection schemes.
+    "
+}
+
+@incollection {transform_survey,
+  author = {Cesare, Silvio and Xiang, Yang and Cesare, Silvio and Xiang, Yang},
+  title = {Program Transformations and Obfuscations},
+  booktitle = {Software Similarity and Classification},
+  series = {SpringerBriefs in Computer Science},
+  publisher = {Springer London},
+  pages = {17-28},
+  year = {2012},
+  annotate = "
+      A brief survey of various code transformations and obfuscation techniques.
+      Useful in providing a starting point for building more complex code transformations,
+      of particular use will be transformations that alter or obscure the call flow graph.
+    "
+}
+
+@ARTICLE{npcomplete, 
+  author={Spinellis, D.}, 
+  journal={Information Theory, IEEE Transactions on},
+  title={Reliable identification of bounded-length viruses is NP-complete}, 
+  year={2003}, 
+  month={jan}, 
+  volume={49}, 
+  number={1}, 
+  pages={ 280 - 284}, 
+  annotate = "
+      A formal proof showing that classifying metamorphic variants of a virus is NP-complete.
+      Shows that pairing a possible mutation with a known variant is equivalent to solving an $N$-term boolean formula which is known to be NP-complete.
+      This proof motivates the study of metamorphic variants and may provide guidance as to the type of transformations that result in NP-completeness.
+    "
+}
+
+@article {springerlink:10.1007/s11416-010-0148-y,
+   author = {Lin, Da and Stamp, Mark},
+   affiliation = {Cisco Systems, Inc., San Jose, CA, USA},
+   title = {Hunting for undetectable metamorphic viruses},
+   journal = {Journal in Computer Virology},
+   publisher = {Springer Paris},
+   issn = {1772-9890},
+   keyword = {Computer Science},
+   pages = {201-214},
+   volume = {7},
+   issue = {3},
+   url = {http://dx.doi.org/10.1007/s11416-010-0148-y},
+   note = {10.1007/s11416-010-0148-y},
+   year = {2011}
+}
+

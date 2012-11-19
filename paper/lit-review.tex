@@ -1,0 +1,69 @@
+\documentclass[finalcopy,short]{srpaper}
+
+\title{Literature Review}
+\author{Will Coster}
+\date{November 20, 2012}
+
+\begin{document}
+  \frontmatter
+  \nocite{*}
+
+  Modern commercial anti-virus software largely relies on static analysis for
+  classifying malware. In response to this malware authors have attempted to
+  write programs that are able to modify their byte signatures with every
+  execution.
+  
+  The fist method of altering a programs byte signature is through encryption
+  \cite{simile}.  The main body of the malware is encrypted and the entry point
+  is defined to be a small decryption routine that decrypts the body and then
+  transfers control to the main portion of the virus. By changing the encryption
+  key and applying minor syntactic variations to the decryption routine, the
+  resulting binary has a widely different byte signature to it's predecessor.
+
+  More sophisticated approaches to polymorphism include modularized encryption
+  where portions of the malware body are decrypted as they are needed and then
+  re-encrypted.
+
+  This form of obfuscation has largely been defeated through the use of hybrid
+  detection schemes that use both dynamic and static analysis \cite{polyunpack}.
+  In such schemes, the suspected malware is allowed to execute in a sandboxed
+  environment, and the anti-virus program then monitors execution for behaviour
+  characteristic of a packed program, e.g. passing control to a section of
+  memory marked as data.
+
+  The following generation of malware achieves obfuscation by applying
+  semantic-preserving transformations to it's bytecode instructions. The result
+  is a program consisting of a different sequences of instructions but performs
+  the same operations. The most common techniques employed in metamorphic
+  malware are code permutation, the insertion dead code, and register swapping.
+
+  ~\\
+
+  On the theoretic side, metamorphic malware is very strong. Reliably
+  classifying as equal two pieces of malware that have undergone metamorphic
+  transformations has been shown to be NP-hard \cite{npcomplete}. In practice
+  however, there are methods of detection that have been shown to work well for
+  the classes of metamorphic malware that is commonly seen in the wild.
+
+  Despite the ability \cite{hmm_detect}
+
+
+  ~\\
+
+  History of malware
+  polymorphic
+  metamorphic
+
+The idea of blending in with the benign
+  mimimorph
+  frankenstein
+
+critique of frankenestien that while it may be constructed from benign programs,
+the signatures anti virus vendors use are long regex like and span many bytes.
+If a signature matches bytes that correspond to one instruction per-gadget, the
+added noise doesn't really supply any benefit.
+
+
+
+  \bibliography{annbib} % Insert the name of your bibliography here.
+\end{document}

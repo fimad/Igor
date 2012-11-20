@@ -32,20 +32,42 @@
   memory marked as data.
 
   The following generation of malware achieves obfuscation by applying
-  semantic-preserving transformations to it's bytecode instructions. The result
-  is a program consisting of a different sequences of instructions but performs
-  the same operations. The most common techniques employed in metamorphic
-  malware are code permutation, the insertion dead code, and register swapping.
+  semantic-preserving transformations to it's bytecode representation. The
+  result is a program consisting of a different sequences of instructions but
+  performs the same operations. The most common techniques employed in
+  metamorphic malware are code permutation, the insertion dead code, and
+  register swapping \cite{simile}.
 
-  ~\\
+  Theoretically, metamorphic obfuscation is very strong. Reliably identifying a
+  piece of malware that has undergone metamorphic transformations has been shown
+  to be NP-hard \cite{npcomplete}. This may seem damning for anti-virus vendors,
+  fortunately however the proof only applies to static methods of classification
+  and in practice current metamorphic malware is typically not sophisticated
+  enough to achieve such difficulty in classification.
 
-  On the theoretic side, metamorphic malware is very strong. Reliably
-  classifying as equal two pieces of malware that have undergone metamorphic
-  transformations has been shown to be NP-hard \cite{npcomplete}. In practice
-  however, there are methods of detection that have been shown to work well for
-  the classes of metamorphic malware that is commonly seen in the wild.
+  \cite{histogram} found that while the sequences of bytes exhibited between
+  various generations of metamorphic malware differs significantly, the
+  frequency of opcodes is relatively static. Using a classifier based on opcode
+  histograms, \cite{histogram} was able to reliably detect many examples of
+  real world malware.
 
-  Despite the ability \cite{hmm_detect}
+  \cite{hmm_detect} presents a method of static analysis that at the time was
+  able to reliably classify malware that had been obfuscated with popular
+  metamorphic engines. The classifier presented in the paper relied on the
+  observation that while existing metamorphic engines are able to achieve a high
+  degree of dissimilarity between variations, they also exhibit a high degree of
+  dissimilarity from benign programs.
+
+  Given the trend in classification to rely on the dissimilarity between
+  metamorphic malware and benign programs, recent work has explored creating
+  metamorphic engines that are able to statistically blend in with benign
+  applications.  \cite{hmm_evade} suggests that simply embedding subroutines
+  from benign applications in the malware is enough to fool classifiers similar
+  to those presented in \cite{hmm_detect}.
+
+  \cite{mimimorph} presents a method of obfuscation they call mimimorphism that
+  generates code that has similar statistical properties to a given population
+  of files. The technique uses Huffman encoding .....
 
 
   ~\\

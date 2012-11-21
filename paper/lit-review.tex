@@ -6,86 +6,168 @@
 
 \begin{document}
   \frontmatter
-  \nocite{*}
+%  \nocite{*}
 
-  Modern commercial anti-virus software largely relies on static analysis for
-  classifying malware. In response to this malware authors have attempted to
-  write programs that are able to modify their byte signatures with every
-  execution.
+  Malware classification techniques fall under two categories: static and
+  dynamic analysis. As the name suggests, static methods analyze the byte
+  structure of a malware sample in an attempt to classify malware without
+  running it. Contrarily, dynamic analysis allows the sample to run (typically
+  in a sandboxed or emulated environment) and gathers information about the
+  sample as it executes. Then based on the observations made during execution,
+  the sample is classified as benign or malicious.  Anomaly based detection
+  systems are a special class of dynamic analysis that watch for program
+  behaviour that deviates from some predefined normal program behaviour.
+  Sequences of syscalls or the api calls made over the lifetime of a program has
+  been shown to be a good model of program behaviour \cite{api_calls}.
+
+  Contrary to dynamic analysis, static analysis attempts to classify a sample
+  before it is permitted to run. Typically this involves matching a potential
+  malware sample against byte signatures (complex patterns of byte sequences)
+  from a database of known malware.  Modern commercial anti-virus vendors
+  largely rely on static analysis for classifying malware. For this reason, a
+  large portion of the evasion efforts staged by malware authors have been in
+  the attempt to thwart static analysis by creating malware that has the
+  capability of modifying its byte signature.
   
-  The fist method of altering a programs byte signature is through encryption
-  \cite{simile}.  The main body of the malware is encrypted and the entry point
-  is defined to be a small decryption routine that decrypts the body and then
-  transfers control to the main portion of the virus. By changing the encryption
-  key and applying minor syntactic variations to the decryption routine, the
-  resulting binary has a widely different byte signature to it's predecessor.
-
-  More sophisticated approaches to polymorphism include modularized encryption
-  where portions of the malware body are decrypted as they are needed and then
-  re-encrypted.
+  The earliest class of malware capable of the automated altering its byte
+  signature is known as polymorphic malware, and employs encryption schemes to
+  randomize the appearance of the malware \cite{simile}.  The simplest case of
+  polymorphism partitions the malware into two segments, a small decryption
+  routine and the main body. The main body is encrypted with a randomly chosen
+  encryption key and upon execution the small decryption routine decrypts the
+  body in memory and then transfers control to the main portion of the program.
+  New generations of the program are created by altering the encryption key and
+  applying minor syntactic variations to the decryption routine. The resulting
+  binary has a widely different byte signature than it's predecessor.  More
+  sophisticated approaches to polymorphism include modularized encryption
+  schemes where portions of the malware body are decrypted on the fly as they
+  are needed and then re-encrypted.
 
   This form of obfuscation has largely been defeated through the use of hybrid
-  detection schemes that use both dynamic and static analysis \cite{polyunpack}.
-  In such schemes, the suspected malware is allowed to execute in a sandboxed
-  environment, and the anti-virus program then monitors execution for behaviour
-  characteristic of a packed program, e.g. passing control to a section of
-  memory marked as data.
+  detection schemes that use aspects of both dynamic and static analysis
+  \cite{polyunpack}.  In such schemes, the suspected malware is allowed to
+  execute in a sandboxed environment, while the anti-virus program monitors
+  execution for behaviour characteristic of a packed program, e.g. passing
+  control to a section of memory marked as data. The monitoring program can then
+  dump the portion of memory that was jumped into, often times revealing the
+  entire unpacked contents of the malware.
 
-  The following generation of malware achieves obfuscation by applying
-  semantic-preserving transformations to it's bytecode representation. The
-  result is a program consisting of a different sequences of instructions but
-  performs the same operations. The most common techniques employed in
-  metamorphic malware are code permutation, the insertion dead code, and
-  register swapping \cite{simile}.
+  The next generation of obfuscating malware, metamorphic malware, achieves
+  obfuscation by applying semantics-preserving transformations to the bytecode
+  representation of its instructions. The result is a program that executes a
+  unique sequences of instructions while performing the same operation. There
+  are several existing metamorphic engines of varying complexity, though most
+  implement similar transformations including: the movement and interleaving of
+  logical sequences of instructions, the insertion of random non-executed
+  instructions, and the swapping of registers \cite{simile}. 
 
   Theoretically, metamorphic obfuscation is very strong. Reliably identifying a
   piece of malware that has undergone metamorphic transformations has been shown
-  to be NP-hard \cite{npcomplete}. This may seem damning for anti-virus vendors,
-  fortunately however the proof only applies to static methods of classification
-  and in practice current metamorphic malware is typically not sophisticated
-  enough to achieve such difficulty in classification.
+  to be NP-hard \cite{npcomplete}. Further, there are known methods of control
+  flow obfuscation that make simply determining the control flow graph of a
+  program NP-Hard \cite{controlflow}.  This may seem damning for anti-virus
+  vendors, fortunately however, these proofs only apply to static methods of
+  classification and in practice current metamorphic malware has not reached
+  sophisticated enough levels to achieve such difficulty in classification.
 
-  \cite{histogram} found that while the sequences of bytes exhibited between
-  various generations of metamorphic malware differs significantly, the
-  frequency of opcodes is relatively static. Using a classifier based on opcode
-  histograms, \cite{histogram} was able to reliably detect many examples of
-  real world malware.
+  The key observation that makes classifying current metamorphic malware
+  tractable is that while the sequences of bytes exhibited between various
+  generations of metamorphic malware differs significantly, current generations
+  of metamorphic malware exhibit certain statistical characteristics that enable
+  them to be classified. For instance, the opcode frequency distributions of
+  metamorphic variants has been shown to be relatively constant between
+  variations. Opcode histogram alone have been shown to be robust enough in some
+  cases to reliably classify real world metamorphic malware samples
+  \cite{histogram}.
 
-  \cite{hmm_detect} presents a method of static analysis that at the time was
-  able to reliably classify malware that had been obfuscated with popular
-  metamorphic engines. The classifier presented in the paper relied on the
-  observation that while existing metamorphic engines are able to achieve a high
-  degree of dissimilarity between variations, they also exhibit a high degree of
-  dissimilarity from benign programs.
+  Another significant property exhibited by modern malware engines is that not
+  only do the executables they generate have statistical properties in common,
+  but they are also statistically very dissimilar from normal benign software
+  \cite{hmm_detect}. HMM-based classifiers that capitalize on this observation
+  are particularly accurate in classifying metamorphic malware.
 
-  Given the trend in classification to rely on the dissimilarity between
-  metamorphic malware and benign programs, recent work has explored creating
-  metamorphic engines that are able to statistically blend in with benign
-  applications.  \cite{hmm_evade} suggests that simply embedding subroutines
-  from benign applications in the malware is enough to fool classifiers similar
-  to those presented in \cite{hmm_detect}.
+  Given this shortcoming with regard to statistical fingerprints in current
+  metamorphic engines, recent work has explored creating metamorphic engines
+  that are able to statistically blend in with benign applications.
+  In some instances it has been shown that simply embedding whole subroutines
+  taken from benign applications randomly through out a malware sample is enough
+  to fool certain classifiers \cite{hmm_evade}.
 
-  \cite{mimimorph} presents a method of obfuscation they call mimimorphism that
-  generates code that has similar statistical properties to a given population
-  of files. The technique uses Huffman encoding .....
+  More sophisticated classification models that take into account the opcode
+  instruction frequencies for the entire executable are more robust to these
+  sorts of evasion tricks. Chi-squared tests have been shown to be able to more
+  sensitive to the frequency histograms and thus are more robust to the minor
+  alterations that occur when embedding portions of benign programs
+  \cite{chisquared}.
 
+  More recent advances in obfuscation have focused on altering the entire
+  frequency histogram of a metamorphic variation to more closely resemble those
+  of benign software. One particular system the authors referred to as
+  mimimorphism employs mimic functions to generate each variation
+  \cite{mimimorph}. The mimic functions used create Huffman forests to
+  represent the frequency distribution of opcodes, and then given the initial
+  variation and a pseudo-random number generator walk the Huffman forest to
+  generate a new version.
 
-  ~\\
+  Other techniques build on the technique of incorporating benign code in each
+  generation. Instead of simply using benign code fragments as dead code, these
+  engines scan benign executables to generate a database of repurposable code
+  fragments from which subsequent generations of the program are pieced together
+  \cite{franken}. The intellectual roots for this type of metamorphic engine
+  comes from a recently discovered shellcode execution attack known as
+  return-oriented programming.
 
-  History of malware
-  polymorphic
-  metamorphic
+  Classic examples of buffer overflow attacks involve the attacker overflowing a
+  buffer allocated on the stack filling it with instructions that will spawn a
+  shell \cite{aleph}. The portion of the content copied into the buffer that
+  overwrites the return address of the stack frame contains an address that
+  points into the overrun buffer. The result is that when the current function
+  exits by executing the ``ret'' instruction, control will pass to the injected
+  code thus giving the attacker the ability to execute arbitrary code.
 
-The idea of blending in with the benign
-  mimimorph
-  frankenstein
+  Since the publication of \cite{aleph} there have been several advances that
+  make classic buffer overflows much more difficult to execute. One of the most
+  notable examples of these measures is the introduction of W$\otimes$X memory
+  which marks every segment of memory allocated to a process as either writable
+  or executable but not both. The result of this is that anywhere the attacker
+  may be able to inject malicious code will have permissions set that disallow
+  it from being run.
 
-critique of frankenestien that while it may be constructed from benign programs,
-the signatures anti virus vendors use are long regex like and span many bytes.
-If a signature matches bytes that correspond to one instruction per-gadget, the
-added noise doesn't really supply any benefit.
+  These measures spurred a new form of attack known as ``return to libc''. In
+  return to libc attacks, the attacker capitalizes on the fact that most
+  programs are linked to libc, which contains functions that can be used to
+  perform potentially malicious operations (notably the ``system'' method which
+  executes the passed in string in a shell). When the attacker overruns a buffer
+  the are able to control the contents of the stack frame. In x86 architectures,
+  the return address and function parameters are passed on the stack. By
+  specially crafting the contents of the stack, the attacker can set the return
+  address to the libc ``system'' method and place a malicious command as the
+  parameter thereby executing an arbitrary shell command when the current
+  function exits.
 
+  Return oriented programming builds on the key idea seen in return to libc
+  attacks of reusing existing instructions in a malicious manner. Return
+  oriented programming generalizes the idea by noting that because the return
+  address of a method is stored on the stack, and that the attacker can control
+  the contents of the stack, they can chain together code fragments (gadgets)
+  from the victim executable that end in a ``ret'' opcode. As each code fragment
+  ``returns'' the address of the next fragment is obtained from the tainted
+  stack frame.  It has been shown that the libc library alone contains
+  sufficient and varied gadgets to constitute a Turing complete system
+  \cite{rop_geo}.
 
+  The metamorphic engine in \cite{franken} combines the principles of return
+  oriented programming with the observation that programs statistically similar
+  to benign programs are more difficult for static analysis techniques to
+  classify. The described metamorphic systems builds a collection of gadgets by
+  scanning through a sampling of benign programs found on the host. There are
+  several simplifying assumptions that can be made in the case of the
+  metamorphic engine that cannot be made in standard return-oriented
+  programming. The most significant is that gadgets do not need to return in a
+  ``ret'' instruction for them to be useful. Given the collection of discovered
+  gadgets, metamorphic programs are written as predicates which are then mapped
+  to gadgets according to the gadgets description of its effect on the system.
 
-  \bibliography{annbib} % Insert the name of your bibliography here.
+  \bibliography{annbib} 
 \end{document}
+

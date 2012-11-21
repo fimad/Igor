@@ -14,24 +14,6 @@
   organization={ACM}
 }
 
-@article{random_inst,
-  author = {Barrantes, Elena Gabriela and Ackley, David H. and Forrest, Stephanie and Stefanovi\'{c}, Darko},
-  title = {Randomized instruction set emulation},
-  journal = {ACM Trans. Inf. Syst. Secur.},
-  issue_date = {February 2005},
-  volume = {8},
-  number = {1},
-  month = feb,
-  year = {2005},
-  pages = {3--40},
-  numpages = {38},
-  url = {http://doi.acm.org/10.1145/1053283.1053286},
-  publisher = {ACM},
-  address = {New York, NY, USA},
-} 
-
-
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Polymorphism
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -151,7 +133,7 @@
 }
 
 
-@article { hmm_evade,
+@article {hmm_evade,
   author = {Lin, Da and Stamp, Mark},
   affiliation = {Cisco Systems, Inc., San Jose, CA, USA},
   title = {Hunting for undetectable metamorphic viruses},
@@ -241,33 +223,6 @@
     "
 }
 
-@INPROCEEDINGS{scenario_opt, 
-  author={Mars, J. and Hundt, R.}, 
-  booktitle={Code Generation and Optimization, 2009. CGO 2009. International Symposium on},
-  title={Scenario Based Optimization: A Framework for Statically Enabling Online Optimizations}, 
-  year={2009}, 
-  month={march}, 
-  pages={169 -179}, 
-  annotate = "
-      Presents a framework for enabling online optimizations of programs.
-      The method employs the use of several statically optimized method variants and then dynamically reroutes control flow based on the results of runtime profiling.
-      It may be possible to adapt their method of dynamic rerouting for use in a control flow obfuscating scheme like the one described in \cite{controlflow}.
-    "
-}
-
-@InProceedings{llvm,
-  author    = {Chris Lattner and Vikram Adve},
-  title     = "{LLVM: A Compilation Framework for Lifelong Program Analysis \& Transformation}",
-  booktitle = "{Proceedings of the 2004 International Symposium on Code Generation and Optimization (CGO'04)}",
-  address   = {Palo Alto, California},
-  month     = {Mar},
-  year      = {2004},
-  annotate  = "
-      This paper describes the specification and implementation of the LLVM compiler framework.
-      The LLVM specification describes an abstract intermediate representation suitable for representation and provides an API for incorporating new optimizations into the compilation pipeline.
-      The generality of LLVM and it's implementation as a library make it well suited for providing the foundations of a proof-of-concept metamorphic engine operating on higher level program representations.
-    "
-}
 
 @inproceedings{api_calls,
   author = {Sami, Ashkan and Yadegari, Babak and Rahimi, Hossein and Peiravian, Naser and Hashemi, Sattar and Hamze, Ali},
@@ -297,7 +252,7 @@
     "
 }
 
-@article {springerlink:10.1007/s11416-011-0157-5,
+@article {anon_evade,
    author = {Ma, Weiqin and Duan, Pu and Liu, Sanmin and Gu, Guofei and Liu, Jyh-Charn},
    affiliation = {Department of Computer Science and Engineering, Texas A&M University, College Station, TX 77843-3112, USA},
    title = {Shadow attacks: automatically evading system-call-behavior based malware detection},
@@ -314,7 +269,7 @@
      "
 }
 
-@inproceedings{mohan2012frankenstein,
+@inproceedings{franken,
   title={Frankenstein: Stitching Malware from Benign Binaries},
   author={Mohan, V. and Hamlen, K.W.},
   booktitle={Proceedings of the 6th USENIX conference on Offensive Technologies},
@@ -330,3 +285,13 @@
     "
 }
 
+@ARTICLE{aleph,
+  AUTHOR = {{Aleph One}},
+  JOURNAL = {Phrack},
+  MONTH = {November},
+  NUMBER = {49},
+  TITLE = {Smashing The Stack For Fun And Profit},
+  URL = {http://www.phrack.org/issues.html?issue=49&id=14},
+  VOLUME = {7},
+  YEAR = {1996}
+}

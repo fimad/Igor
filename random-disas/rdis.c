@@ -7,6 +7,8 @@
 #include <distorm.h>
 #include <mnemonics.h>
 
+#include "eval.h"
+
 /*
  * INST_STREAM_MAX gives the maximum length of an instruction stream in bytes,
  * INST_MAX gives the maximum number of instructions in a stream.
@@ -50,11 +52,9 @@ int main (int argc, char **argv) {
   info.code = byteStream;
   info.codeLen = INST_STREAM_MAX;
   info.dt = Decode32Bits;
-  info.features = 0; /* We don't want to stop any any special opcodes */
+  info.features = 0; /* We don't want to stop on any special opcodes */
 
 
-  double average = 0;
-  double average2 = 0;
   for (i=0; i<1000000; i++) {
     _DecodeResult result;
     _DInst instructions[INST_MAX];
@@ -64,28 +64,24 @@ int main (int argc, char **argv) {
     result = distorm_decompose(&info, instructions, INST_MAX, &instructionCount);
 
     if( result == DECRES_SUCCESS ){
-      average += instructionCount/1000000.0;
-      average2 += (instructionCount*instructionCount)/1000000.0;
-//      printf("--------------------------------------------------------------------------------\n", instructionCount);
-//      for( j=0; j<instructionCount; j++ ){
-//        if( instructions[j].opcode == OPCODE_ID_NONE ){
-//          break;
-//        }else{
-//          printf("\t%s ", GET_MNEMONIC_NAME(instructions[j].opcode));
-//          for( k=0; k<OPERANDS_NO; k++ ){
-//            if( instructions[j].ops[k].type == O_NONE ){
-//              break;
-//            }else if( instructions[j].ops[k].type == O_REG ){
-//              printf("\t%s ", GET_REGISTER_NAME(instructions[j].ops[k].index));
-//            }
-//          }
-//          printf("\n");
-//        }
-//      }
-//      printf("\n");
+      for( j=0; j<instructionCount; j++ ){
+        if( instructions[j].opcode == OPCODE_ID_NONE ){
+          break;
+        }else{
+
+
+          printf("\t%s ", GET_MNEMONIC_NAME(instructions[j].opcode));
+          for( k=0; k<OPERANDS_NO; k++ ){
+            if( instructions[j].ops[k].type == O_NONE ){
+              break;
+            }else if( instructions[j].ops[k].type == O_REG ){
+              printf("\t%s ", GET_REGISTER_NAME(instructions[j].ops[k].index));
+            }
+          }
+          printf("\n");
+        }
+      }
     }
   }
-  printf("Average instructions: %f\n", average);
-  printf("Standard Deviation:   %f\n", sqrt(average2 - average*average));
 }
 

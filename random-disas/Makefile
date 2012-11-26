@@ -1,7 +1,7 @@
 CC=gcc
 INCLUDES=-I../distorm/include/
 LIBS=../distorm/distorm3.a -lm -lc
-CFLAGS=-std=c99 ${INCLUDES}
+CFLAGS=-g -std=c99 ${INCLUDES}
 
 all: rdis
 	

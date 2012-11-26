@@ -26,6 +26,11 @@
  * TODO: Currently there is no good distinction between the portions of various
  * registers, e.g. EAX, AX, AH and AL. The current solution is to ignore all
  * registers besides the E* variants.
+ *
+ * TODO: Also, we need to add support for comparisons. This shouldn't actually
+ * be that difficult. It should be possible to implement each bit of the
+ * condition register as a unique Location and then using logical expressions
+ * express it's state.
  */
 
 /* The various error codes that can be returned. */
@@ -35,6 +40,11 @@ enum Errors {
   , InvalidLocationType 
   /* The evaluator does not yet know how to interpret the given instruction. */
   , UnsupportedInstruction 
+  /* 
+   * We ran into a problem allocating memory. But really though, this should
+   * never happen.
+   */
+  , OutOfMemory
 };
 
 /* 
@@ -44,7 +54,8 @@ enum Errors {
  * should be queried using the provided methods at the bottom of this file.
  */
 struct State {
-  size_t modifiedLocations;
+  size_t modifiedLocations; /* The number of actual entries in the locationValues array. */
+  size_t allocatedLocations; /* The size of the locationValues array. */
   /* An array of location values (pointer to expressions). */
   struct Expression **locationValues;
 };
@@ -82,6 +93,11 @@ struct Location {
     uint32_t address; 
     /* The address of an LMemoryExpression location.*/
     struct Expression *expression;
+    /* 
+     * Used for comparisons when the semantics of the union is unimportant, and
+     * only it's bitwise equality matters.
+     */
+    uint64_t extra;
   };
 };
 

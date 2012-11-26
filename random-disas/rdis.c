@@ -72,6 +72,8 @@ int main (int argc, char **argv) {
     for( j=0; j<instructionCount; j++ ){
       if( eval(&evalState, &instructions[j]) == Success ){
 
+        if( instructions[j].opcode == I_MOV ) printf("GOT A REALLY SIMPLY MOV!\n");
+        else if( instructions[j].opcode == I_NOP ) printf("GOT A NOP!\n");
 
       }else{
         /* 

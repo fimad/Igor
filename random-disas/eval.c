@@ -6,6 +6,7 @@
 
 void newState(struct State* state) {
   state->modifiedLocations = 0;
+  state->allocatedLocations = 0;
   state->locationValues = NULL;
 }
 
@@ -25,6 +26,7 @@ void freeExpression(struct Expression* expr){
       case EConstantInt:
       case ELocation:
         free(expr);
+        break;
       /* 
        * For binary operations, recursively free each child before freeing the
        * parent.
@@ -34,6 +36,7 @@ void freeExpression(struct Expression* expr){
         freeExpression(expr->value.left);
         freeExpression(expr->value.right);
         free(expr);
+        break;
     }
   }
 }
@@ -96,6 +99,55 @@ struct Expression* newExpression(struct Location source){
   return expr;
 }
 
+/* 
+ * Log in state that the value corresponding to location is now equal to the
+ * given expression.
+ */
+int setLocation(struct State *state, struct Location location, struct Expression *expr){
+  /* 
+   * Look for location in the locationValues array, and update it's value if
+   * found
+   */
+  for( int i=0; i<state->modifiedLocations; i++ ){
+    /* 
+     * If we find the location in the array, free the existing expression and
+     * replace it with the new value.
+     */
+    if( LOCATION_EQ(state->locationValues[i]->source, location) ){
+      freeExpression(state->locationValues[i]);
+      state->locationValues[i] = expr;
+      return Success;
+    }
+  }
+
+  /* 
+   * If we reach this point, the location was not previously stored in the
+   * state, and we must add it.
+   */
+
+  /*Grow the modified locations array if there is no more room. */
+  if( state->allocatedLocations == state->modifiedLocations ){
+    /* 
+     * The new number of allocated locations is twice the number of old
+     * allocated locations. If there weren't any previously, we start at 4.
+     */
+    int newAllocatedLocations =
+      (state->allocatedLocations) ? state->allocatedLocations*2 : 4;
+
+    struct Expression **tmp =
+      realloc(state->locationValues, sizeof(struct Expression*)*newAllocatedLocations );
+    if( tmp ){
+      state->locationValues = tmp;
+    }else{
+      return OutOfMemory;
+    }
+  }
+
+  /* Append the new value to the state. */
+  state->locationValues[state->modifiedLocations++] = expr;
+  return Success;
+}
+
 int eval(struct State* state, _DInst* inst) {
   /* Grab the first two operands of the instruction. */
   struct Location operand0 = getOperandLocation(inst, 0);
@@ -113,8 +165,10 @@ int eval(struct State* state, _DInst* inst) {
       case I_MOV :
         if( IS_VALID(operand0) && IS_VALID(operand1) ){
           expr = newExpression(operand0);
+          if( !expr) return OutOfMemory;
           expr->type = ELocation;
           expr->value.location = operand1;
+          return setLocation(state, operand0, expr);
         }
         break;
     }

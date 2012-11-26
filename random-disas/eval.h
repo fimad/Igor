@@ -1,3 +1,6 @@
+#ifndef _EVAL_H_
+#define _EVAL_H_
+
 #include <sys/types.h>
 #include <distorm.h>
 
@@ -19,6 +22,10 @@
  * locations. In order to prevent this from happening, it would be necessary to
  * disallow variable memory writes if there have been any previous memory
  * writes, and to disallow any future writes if one has already occurred.
+ *
+ * TODO: Currently there is no good distinction between the portions of various
+ * registers, e.g. EAX, AX, AH and AL. The current solution is to ignore all
+ * registers besides the E* variants.
  */
 
 /* The various error codes that can be returned. */
@@ -51,7 +58,8 @@ struct State {
  */
 
 enum LocationType {
-    LMemory
+    LInvalid
+  , LMemory
   , LMemoryExpression /* The location in memory is the result of an expression. */
   , LRegEAX
   , LRegEBX
@@ -93,7 +101,7 @@ enum ExpressionType {
 
 struct Expression {
   /* What location does this expression correspond to? */
-  struct Location location;
+  struct Location source;
   /* How many references are there to this expression? */
   int32_t references;
   /* What is the type of this expression? */
@@ -149,4 +157,6 @@ int valueOf(struct State*, struct Location, struct Expression*);
 
 /* Returns a list of modified locations. */
 void modifiedLocations(struct State*);
+
+#endif
 

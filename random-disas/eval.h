@@ -1,6 +1,26 @@
 #include <sys/types.h>
 #include <distorm.h>
 
+/*
+ * TODO: Currently, there is not an elegant way of noting that the modified
+ * locations can be a function of the initial state. For instance, how should
+ * the result of the instruction "mov [eax], 0" be represented?
+ *
+ * Also, because we are modifying a potentially arbitrary memory location, any
+ * future memory reads may be overwritten by the instruction and would not
+ * report their correct state. In order to fix this, it would be necessary to
+ * stop evaluation prior to a another memory operation occurring if a variable
+ * memory write has already been encountered.
+ *
+ * Another problem is that if there are logged location writes and a variable
+ * write is encountered, then there is the potential for the variable write to
+ * overwrite the value of a previously logged write. This would not be caught
+ * though, and there would be two different values reported for the two
+ * locations. In order to prevent this from happening, it would be necessary to
+ * disallow variable memory writes if there have been any previous memory
+ * writes, and to disallow any future writes if one has already occurred.
+ */
+
 /* The various error codes that can be returned. */
 enum Errors {
     Success = 0
@@ -32,6 +52,7 @@ struct State {
 
 enum LocationType {
     LMemory
+  , LMemoryExpression /* The location in memory is the result of an expression. */
   , LRegEAX
   , LRegEBX
   , LRegECX
@@ -45,10 +66,15 @@ enum LocationType {
 struct Location {
   uint8_t type; /* What is the type of the location? */
   /* 
-   * The value of extra depends on the type of the location. It is unused for
-   * registers and the 32bit memory location of location for memory types.
+   * The value of the union depends on the type of the location. It is unused
+   * for registers and the 32bit memory location of location for memory types.
    */
-  uint32_t extra; 
+  union{
+    /* The address of an LMemory location. */
+    uint32_t address; 
+    /* The address of an LMemoryExpression location.*/
+    struct Expression *expression;
+  };
 };
 
 

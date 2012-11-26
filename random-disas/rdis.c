@@ -46,6 +46,7 @@ int main (int argc, char **argv) {
   srand(time(NULL));
   uint8_t byteStream[INST_STREAM_MAX];
   _CodeInfo info;
+  struct State evalState;
   int i,j,k;
 
   info.codeOffset = 0; 
@@ -54,32 +55,30 @@ int main (int argc, char **argv) {
   info.dt = Decode32Bits;
   info.features = 0; /* We don't want to stop on any special opcodes */
 
+  newState(&evalState);
 
   for (i=0; i<1000000; i++) {
     _DecodeResult result;
     _DInst instructions[INST_MAX];
     unsigned int instructionCount;
 
+    /* Grab and decode a random stream of bytes. */
     randomizeBuffer(byteStream, INST_STREAM_MAX);
     result = distorm_decompose(&info, instructions, INST_MAX, &instructionCount);
 
-    if( result == DECRES_SUCCESS ){
-      for( j=0; j<instructionCount; j++ ){
-        if( instructions[j].opcode == OPCODE_ID_NONE ){
-          break;
-        }else{
+    /* Start the evaluation with a fresh state. */
+    clearState(&evalState);
+    /* Attempt to evaluate the effect of each instruction decoded. */
+    for( j=0; j<instructionCount; j++ ){
+      if( eval(&evalState, &instructions[j]) == Success ){
 
 
-          printf("\t%s ", GET_MNEMONIC_NAME(instructions[j].opcode));
-          for( k=0; k<OPERANDS_NO; k++ ){
-            if( instructions[j].ops[k].type == O_NONE ){
-              break;
-            }else if( instructions[j].ops[k].type == O_REG ){
-              printf("\t%s ", GET_REGISTER_NAME(instructions[j].ops[k].index));
-            }
-          }
-          printf("\n");
-        }
+      }else{
+        /* 
+         * Stop checking if we run into an unknown instruction. This will also
+         * catch the end of the instruction stream.
+         */
+        break; 
       }
     }
   }

@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <mnemonics.h>
 #include "eval.h"
 
 void newState(struct State* state) {
@@ -51,6 +52,20 @@ void clearState(struct State* state) {
 }
 
 int eval(struct State* state, _DInst* inst) {
+  /* Ensure that the instruction was properly decoded. */
+  if( inst->flags != FLAG_NOT_DECODABLE ){
+    /* Handle the effect of every known instruction. */
+    switch( inst->opcode ){
+      case I_NOP :
+        return Success;
+        
+      case I_MOV :
+        break;
+    }
+  }
+
+  /* We did not know how to handle it. */
+  return UnsupportedInstruction;
 }
 
 int valueOf(struct State* state, struct Location location, struct Expression* expr) {

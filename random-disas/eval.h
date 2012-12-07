@@ -31,6 +31,10 @@
  * be that difficult. It should be possible to implement each bit of the
  * condition register as a unique Location and then using logical expressions
  * express it's state.
+ *
+ * TODO: Also, signed vs unsigned numbers???? Let's just wave our hands and make
+ * everything signed at this point. If this ends up fucking everything up then
+ * we can change it...
  */
 
 /* The various error codes that can be returned. */
@@ -40,6 +44,8 @@ enum Errors {
   , InvalidLocationType 
   /* The evaluator does not yet know how to interpret the given instruction. */
   , UnsupportedInstruction 
+  /* The evaluator does not yet know how to interpret the given operand. */
+  , UnsupportedOperand 
   /* 
    * We ran into a problem allocating memory. But really though, this should
    * never happen.
@@ -124,7 +130,7 @@ struct Expression {
   uint8_t type;
   /* The interpretation of the 'value' union depends on the value of type. */
   union {
-    uint32_t constantInt; /* The value of a constant integer expression. */
+    int64_t constantInt; /* The value of a constant integer expression. */
     struct Location location; /* The value of an initial location expression. */
     /* The children expressions for binary expressions. */
     struct {

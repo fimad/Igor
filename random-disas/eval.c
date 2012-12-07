@@ -83,6 +83,14 @@ struct Location getOperandLocation(_DInst* inst, int index){
         return REGISTER_LOCATION(LRegESI);
     }
   }
+  /* The operand is an immediate */
+  else if( inst->ops[index].type == O_IMM ){
+    /* 
+     * Immediates don't really count as locations. This operand should be
+     * queried using the getOperandExpression method instead.
+     */
+    return INVALID_LOCATION;
+  }
 
   /* The location is of an unsupported type. */
   return INVALID_LOCATION;
@@ -97,6 +105,43 @@ struct Expression* newExpression(struct Location source){
   expr->source = source;
   expr->references = 1;
   return expr;
+}
+
+/* Decompose an operand into a expression struct. */
+struct Expression* getOperandExpression(_DInst* inst, int index){
+  struct Expression *expr;
+
+  /* Ensure the input is valid */
+  if( 3 < index || index < 0 || inst->ops[index].type == O_NONE ){
+    return NULL;
+  }
+
+  /* Create a new expression. */
+  expr = newExpression(INVALID_LOCATION);
+  if( !expr ){
+    return NULL;
+  }
+
+  /* In the event of a register, wrap the register location as an expression. */
+  if( inst->ops[index].type == O_REG ){
+    expr->type = ELocation;
+    expr->value.location = getOperandLocation(inst, index);
+    return expr;
+  }
+  /* The operand is an immediate */
+  else if( inst->ops[index].type == O_IMM ){
+    expr->type = EConstantInt;
+    expr->value.constantInt = inst->imm.sqword;
+    return expr;
+  }
+
+  /* 
+   * If we reach this point, we have not been able to turn the operand into an
+   * expression so we will free the memory we have allocated and return NULL to
+   * signify our failure.
+   */
+  freeExpression(expr);
+  return NULL;
 }
 
 /* 
@@ -151,7 +196,7 @@ int setLocation(struct State *state, struct Location location, struct Expression
 int eval(struct State* state, _DInst* inst) {
   /* Grab the first two operands of the instruction. */
   struct Location operand0 = getOperandLocation(inst, 0);
-  struct Location operand1 = getOperandLocation(inst, 1);
+  //struct Location operand1 = getOperandLocation(inst, 1);
 
   struct Expression *expr;
 
@@ -163,11 +208,9 @@ int eval(struct State* state, _DInst* inst) {
         return Success;
         
       case I_MOV :
-        if( IS_VALID(operand0) && IS_VALID(operand1) ){
-          expr = newExpression(operand0);
-          if( !expr) return OutOfMemory;
-          expr->type = ELocation;
-          expr->value.location = operand1;
+        if( IS_VALID(operand0) ){
+          expr = getOperandExpression(inst, 1);
+          if( !expr) return UnsupportedOperand;
           return setLocation(state, operand0, expr);
         }
         break;

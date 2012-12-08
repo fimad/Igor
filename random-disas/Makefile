@@ -6,8 +6,8 @@ CFLAGS=-g -std=c99 ${INCLUDES}
 all: rdis
 	
 
-rdis: rdis.c eval.h eval.c
-	${CC} ${CFLAGS} -o rdis rdis.c eval.c ${LIBS}
+rdis: rdis.c errors.h eval.h eval.c expr.h expr.c
+	${CC} ${CFLAGS} -o rdis rdis.c eval.c expr.c ${LIBS}
 
 clean:
 	rm rdis

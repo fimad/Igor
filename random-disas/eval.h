@@ -4,6 +4,8 @@
 #include <sys/types.h>
 #include <distorm.h>
 
+#include "expr.h"
+
 /*
  * TODO: Currently, there is not an elegant way of noting that the modified
  * locations can be a function of the initial state. For instance, how should
@@ -37,22 +39,6 @@
  * we can change it...
  */
 
-/* The various error codes that can be returned. */
-enum Errors {
-    Success = 0
-  /* The type field of the location struct was invalid. */
-  , InvalidLocationType 
-  /* The evaluator does not yet know how to interpret the given instruction. */
-  , UnsupportedInstruction 
-  /* The evaluator does not yet know how to interpret the given operand. */
-  , UnsupportedOperand 
-  /* 
-   * We ran into a problem allocating memory. But really though, this should
-   * never happen.
-   */
-  , OutOfMemory
-};
-
 /* 
  * The state struct represents the internal state of an x86 machine.
  *
@@ -65,81 +51,6 @@ struct State {
   /* An array of location values (pointer to expressions). */
   struct Expression **locationValues;
 };
-
-
-/*
- * Locations are an abstraction that encompasses both registers and memory
- * locations. Each corresponds to a unique location, and each location has a
- * corresponding value for any given state. The value of a location will be an
- * Expression which is a combination of initial location values.
- */
-
-enum LocationType {
-    LInvalid
-  , LMemory
-  , LMemoryExpression /* The location in memory is the result of an expression. */
-  , LRegEAX
-  , LRegEBX
-  , LRegECX
-  , LRegEDX
-  , LRegESP
-  , LRegEBP
-  , LRegEDI
-  , LRegESI
-};
-
-struct Location {
-  uint8_t type; /* What is the type of the location? */
-  /* 
-   * The value of the union depends on the type of the location. It is unused
-   * for registers and the 32bit memory location of location for memory types.
-   */
-  union{
-    /* The address of an LMemory location. */
-    uint32_t address; 
-    /* The address of an LMemoryExpression location.*/
-    struct Expression *expression;
-    /* 
-     * Used for comparisons when the semantics of the union is unimportant, and
-     * only it's bitwise equality matters.
-     */
-    uint64_t extra;
-  };
-};
-
-
-/*
- * Expressions are the abstract representations of values in this evaluator.
- * The represent the combination of one or more constants and initial location
- * values.
- */
-
-enum ExpressionType {
-    EConstantInt
-  , ELocation
-  , EPlus
-  , EMinus
-};
-
-struct Expression {
-  /* What location does this expression correspond to? */
-  struct Location source;
-  /* How many references are there to this expression? */
-  int32_t references;
-  /* What is the type of this expression? */
-  uint8_t type;
-  /* The interpretation of the 'value' union depends on the value of type. */
-  union {
-    int64_t constantInt; /* The value of a constant integer expression. */
-    struct Location location; /* The value of an initial location expression. */
-    /* The children expressions for binary expressions. */
-    struct {
-      struct Expression *left;
-      struct Expression *right;
-    };
-  } value;
-};
-
 
 /* 
  * Initializes the passed in state so that every location is mapped to it's
@@ -175,7 +86,7 @@ int eval(struct State*, _DInst*);
  * unclear who owns the memory in this instance since there would be no record
  * of it's existing in the State).
  */
-int valueOf(struct State*, struct Location, struct Expression*);
+int valueOf(struct State*, struct Location, struct Expression**);
 
 /* Returns a list of modified locations. */
 void modifiedLocations(struct State*);

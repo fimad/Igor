@@ -2,43 +2,14 @@
 #include <mnemonics.h>
 
 #include "eval.h"
+#include "expr.h"
+#include "errors.h"
 #include "eval_macros.h"
 
 void newState(struct State* state) {
   state->modifiedLocations = 0;
   state->allocatedLocations = 0;
   state->locationValues = NULL;
-}
-
-/*
- * Frees the memory allocated for a given expression. This method will handle
- * freeing all sub expressions that have been allocated for this expression as
- * well.
- */
-void freeExpression(struct Expression* expr){
-  /* 
-   * Decrement the number of references to this expression and if it hits 0 or
-   * below actually free the memory.
-   */
-  if( --expr->references <= 0 ){
-    switch( expr->type ){
-      /* No extra work needed for freeing simple expressions. */
-      case EConstantInt:
-      case ELocation:
-        free(expr);
-        break;
-      /* 
-       * For binary operations, recursively free each child before freeing the
-       * parent.
-       */
-      case EPlus:
-      case EMinus:
-        freeExpression(expr->value.left);
-        freeExpression(expr->value.right);
-        free(expr);
-        break;
-    }
-  }
 }
 
 void clearState(struct State* state) {
@@ -96,19 +67,8 @@ struct Location getOperandLocation(_DInst* inst, int index){
   return INVALID_LOCATION;
 }
 
-/* Allocate a new expression. */
-struct Expression* newExpression(struct Location source){
-  struct Expression *expr = calloc(1, sizeof(struct Expression));
-  if( !expr ){
-    return NULL;
-  }
-  expr->source = source;
-  expr->references = 1;
-  return expr;
-}
-
 /* Decompose an operand into a expression struct. */
-struct Expression* getOperandExpression(_DInst* inst, int index){
+struct Expression* getOperandExpression(struct State *state, _DInst *inst, int index){
   struct Expression *expr;
 
   /* Ensure the input is valid */
@@ -116,31 +76,27 @@ struct Expression* getOperandExpression(_DInst* inst, int index){
     return NULL;
   }
 
-  /* Create a new expression. */
-  expr = newExpression(INVALID_LOCATION);
-  if( !expr ){
-    return NULL;
-  }
-
   /* In the event of a register, wrap the register location as an expression. */
   if( inst->ops[index].type == O_REG ){
-    expr->type = ELocation;
-    expr->value.location = getOperandLocation(inst, index);
-    return expr;
+    if( valueOf(state, getOperandLocation(inst, index), &expr) ){
+      return expr;
+    }else{
+      return NULL;
+    }
   }
   /* The operand is an immediate */
   else if( inst->ops[index].type == O_IMM ){
+    /* Create a new expression. */
+    expr = newExpression(INVALID_LOCATION);
+    if( !expr ){
+      return NULL;
+    }
+
     expr->type = EConstantInt;
     expr->value.constantInt = inst->imm.sqword;
     return expr;
   }
 
-  /* 
-   * If we reach this point, we have not been able to turn the operand into an
-   * expression so we will free the memory we have allocated and return NULL to
-   * signify our failure.
-   */
-  freeExpression(expr);
   return NULL;
 }
 
@@ -190,6 +146,7 @@ int setLocation(struct State *state, struct Location location, struct Expression
 
   /* Append the new value to the state. */
   state->locationValues[state->modifiedLocations++] = expr;
+  claimExpression(expr);
   return Success;
 }
 
@@ -209,7 +166,7 @@ int eval(struct State* state, _DInst* inst) {
         
       case I_MOV :
         if( IS_VALID(operand0) ){
-          expr = getOperandExpression(inst, 1);
+          expr = getOperandExpression(state, inst, 1);
           if( !expr) return UnsupportedOperand;
           return setLocation(state, operand0, expr);
         }
@@ -221,6 +178,38 @@ int eval(struct State* state, _DInst* inst) {
   return UnsupportedInstruction;
 }
 
-int valueOf(struct State* state, struct Location location, struct Expression* expr) {
+int valueOf(struct State* state, struct Location location, struct Expression** expr) {
+  /* Ensure we have a valid state. */
+  if( !state ){
+    return InvalidState;
+  }
+
+  /* Look in the list of modified locations for the desired location. */
+  for( int i=0; i<state->modifiedLocations; i++ ){
+    if( LOCATION_EQ(state->locationValues[i]->source, location) ){
+      *expr = state->locationValues[i];
+      return Success;
+    }
+  }
+
+  /* 
+   * If we reach this point, the desired location has not been modified.
+   * Therefore, we must return an expression corresponding to the original
+   * value of the location.
+   */
+  *expr = newExpression(location);
+  (*expr)->type = ELocation;
+  (*expr)->value.location = location;
+
+  /*
+   * Because we aren't saving the reference to this, the number of references is
+   * technically 0, but we should not call freeExpression to decrement it
+   * because that would allocate the memory, and we want it to exist long enough
+   * to be passed out of the function and for the caller to have a chance to
+   * claim it.
+   */
+  (*expr)->references --;
+
+  return Success;
 }
 

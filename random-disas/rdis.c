@@ -8,6 +8,7 @@
 #include <mnemonics.h>
 
 #include "eval.h"
+#include "errors.h"
 
 /*
  * INST_STREAM_MAX gives the maximum length of an instruction stream in bytes,

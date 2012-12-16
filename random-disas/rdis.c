@@ -8,6 +8,8 @@
 #include <mnemonics.h>
 
 #include "eval.h"
+#include "match.h"
+#include "eval_macros.h"
 #include "errors.h"
 
 /*
@@ -48,6 +50,8 @@ int main (int argc, char **argv) {
   uint8_t byteStream[INST_STREAM_MAX];
   _CodeInfo info;
   struct State evalState;
+  struct MatchInfo *matchInfo;
+  struct Expression movTarget;
   int i,j,k;
 
   info.codeOffset = 0; 
@@ -55,6 +59,11 @@ int main (int argc, char **argv) {
   info.codeLen = INST_STREAM_MAX;
   info.dt = Decode32Bits;
   info.features = 0; /* We don't want to stop on any special opcodes */
+
+  movTarget.source = INVALID_LOCATION;
+  movTarget.references = 0;
+  movTarget.type = ELocation;
+  movTarget.value.location = VARIABLE_LOCATION(0);
 
   newState(&evalState);
 
@@ -73,8 +82,11 @@ int main (int argc, char **argv) {
     for( j=0; j<instructionCount; j++ ){
       if( eval(&evalState, &instructions[j]) == Success ){
 
-        if( instructions[j].opcode == I_MOV ) printf("GOT A REALLY SIMPLY MOV!\n");
-        else if( instructions[j].opcode == I_NOP ) printf("GOT A NOP!\n");
+        //if( instructions[j].opcode == I_MOV ) printf("GOT A REALLY SIMPLY MOV!\n");
+        //else if( instructions[j].opcode == I_NOP ) printf("GOT A NOP!\n");
+        if( match(&evalState, &movTarget, &matchInfo) == Success ){
+          printf("Found a move!\n");
+        }
 
       }else{
         /* 

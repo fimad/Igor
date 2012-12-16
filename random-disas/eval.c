@@ -126,7 +126,7 @@ int setLocation(struct State *state, struct Location location, struct Expression
    * state, and we must add it.
    */
 
-  /*Grow the modified locations array if there is no more room. */
+  /* Grow the modified locations array if there is no more room. */
   if( state->allocatedLocations == state->modifiedLocations ){
     /* 
      * The new number of allocated locations is twice the number of old

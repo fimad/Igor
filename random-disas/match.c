@@ -22,6 +22,35 @@
  */
 
 /* 
+ * Attempts to assign a given constant to the constant variable with the given
+ * id. If the constant has already been set to a different constant, then it
+ * will return an error, if it is successful it will return Success (0).
+ */
+int setConstantVariable(struct MatchInfo *info, uint32_t id, int64_t constant){
+  int i;
+  /* Look for id in the already matched variables. */
+  for( i=0; i<info->numConstants; i++ ){
+    if( info->constants[i].id == id ){
+      /* Ensure that the constant is set to the desired value. */
+      if( info->constants[i].value == constant ){
+        return Success;
+      }else{
+        return InvalidMatch;
+      }
+    }
+  }
+
+  /* The constant was not found we must add it to the list. */
+  if( info->numConstants == info->allocatedConstants ){
+    /* We need to allocate more space for constants. */
+    size_t newSize = (sizeof(struct MatchedConstant))*(info->allocatedConstants ? info->allocatedConstants*2 : 4);
+    info->constants = realloc(info->constants, newSize);
+  }
+  info->constants[info->numConstants++] = ((struct MatchedConstants){id, constant});
+
+  return Success;
+}
+/* 
  * Attempts to assign a given location to the location variable with the given
  * id. If the variable has already been set to a different location, then it
  * will return an error, if it is successful it will return Success (0).
@@ -64,7 +93,7 @@ int matchHelper(struct Expression *target, struct Expression *candidate, struct 
       case EConstantInt :
         /* TODO: pass? */
         printf("const???....\n");
-        return Success;
+        return setConstantVariable(info, target->value.constantInt, candidate->value.constantInt);
         
       case ELocation :
         printf("hey....\n");
@@ -102,6 +131,7 @@ int match(struct State *state, struct Expression *target, struct MatchInfo **inf
     /* Reset the match info before each attempted matching. */
     (*info)->numVariables = 0;
     (*info)->numClobbered = 0;
+    (*info)->numConstants = 0;
 
     /* Attempt to match the current location with the target */
     if( matchHelper(target, state->locationValues[i], *info) == Success ){
@@ -127,6 +157,9 @@ void freeMatchInfo(struct MatchInfo *info){
   }
   if( info->allocatedClobbered ){
     free(info->clobbered);
+  }
+  if( info->allocatedConstants ){
+    free(info->constants);
   }
   free(info);
 }

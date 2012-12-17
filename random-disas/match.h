@@ -5,6 +5,12 @@
 
 struct State;
 
+struct MatchedConstant {
+  /* The id of a Variable Constant. */
+  uint32_t id;
+  int64_t value;
+};
+
 struct MatchedLocation {
   /* The id of a Variable Location. */
   uint32_t id;
@@ -21,13 +27,18 @@ struct MatchInfo {
   struct Location source;
 
   /* An array of variable locations that have been matched. */
-  uint32_t numVariables;
-  uint32_t allocatedVariables;
+  size_t numVariables;
+  size_t allocatedVariables;
   struct MatchedLocation *variables;
 
   /* An array of Locations that are clobbered.  */
-  uint32_t numClobbered;
-  uint32_t allocatedClobbered;
+  size_t numConstants;
+  size_t allocatedConstants;
+  struct MatchedConstant *constants;
+
+  /* An array of Locations that are clobbered.  */
+  size_t numClobbered;
+  size_t allocatedClobbered;
   struct Location *clobbered;
 };
 

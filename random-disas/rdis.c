@@ -62,8 +62,8 @@ int main (int argc, char **argv) {
 
   movTarget.source = INVALID_LOCATION;
   movTarget.references = 0;
-  movTarget.type = ELocation;
-  movTarget.value.location = VARIABLE_LOCATION(0);
+  movTarget.type = EConstantInt;
+  movTarget.value.constantInt = 0;
 
   newState(&evalState);
 

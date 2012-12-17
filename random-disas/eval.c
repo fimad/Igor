@@ -167,7 +167,7 @@ int eval(struct State* state, _DInst* inst) {
       case I_MOV :
         if( IS_VALID(operand0) ){
           expr = getOperandExpression(state, inst, 1);
-          if( !expr) return UnsupportedOperand;
+          if( !expr ) return UnsupportedOperand;
           return setLocation(state, operand0, expr);
         }
         break;
@@ -207,8 +207,11 @@ int valueOf(struct State* state, struct Location location, struct Expression** e
    * because that would allocate the memory, and we want it to exist long enough
    * to be passed out of the function and for the caller to have a chance to
    * claim it.
+   *
+   * newExpression has since changed so that it does not set the reference
+   * count, therefore it is not necessary to hackishly decrement the references.
    */
-  (*expr)->references --;
+//  (*expr)->references --;
 
   return Success;
 }

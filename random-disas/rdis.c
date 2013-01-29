@@ -30,7 +30,7 @@ void randomizeBuffer (void *buffer, size_t length) {
   while (length > sizeof(int)) {
     tmp = rand();
     *((int*)buffer) = tmp;
-    buffer += sizeof(int);
+    buffer = ((int*)buffer) + 1;
     length -= sizeof(int);
   }
   /*
@@ -80,6 +80,15 @@ int main (int argc, char **argv) {
     clearState(&evalState);
     /* Attempt to evaluate the effect of each instruction decoded. */
     for( j=0; j<instructionCount; j++ ){
+
+      printf("\n--------------------\n");
+      /* Pretty print each successfully eval'ed stream. */
+      for( k=0; k<=j; k++ ){
+        _DecodedInst formatted;
+        distorm_format(&info, &instructions[k], &formatted);
+        printf("%s %s\n", formatted.mnemonic.p, formatted.operands.p);
+      }
+
       if( eval(&evalState, &instructions[j]) == Success ){
 
         //if( instructions[j].opcode == I_MOV ) printf("GOT A REALLY SIMPLY MOV!\n");

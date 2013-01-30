@@ -12,7 +12,9 @@ module Igor
 -- * Methods
 , valueOf
 , eval
+, evalFold
 ) where
+import Control.Monad
 import Data.Int
 import Data.Word
 import System.Random
@@ -108,6 +110,7 @@ operandToExpression :: H.Operand -> State -> Expression
 operandToExpression (H.Imm word) _ = Immediate $ Constant (fromIntegral $ H.iValue word)
 operandToExpression location state = valueOf (operandToLocation location) state
 
+-- | Evaluates a single instruction.
 eval :: State -> H.Instruction -> Maybe State 
 eval state instruction@(H.Inst {H.inOpcode = H.Inop}) = Just state
 eval state instruction@(H.Inst {H.inOpcode = H.Imov}) = let
@@ -116,7 +119,13 @@ eval state instruction@(H.Inst {H.inOpcode = H.Imov}) = let
     srcValue = operandToExpression src state
   in
     case (dstLocation,srcValue) of
-      (InvalidLocation, InvalidExpression) -> Nothing
-      otherwise                            -> Just $ M.insert dstLocation srcValue state
+      (InvalidLocation, _)   -> Nothing
+      (_, InvalidExpression) -> Nothing
+      otherwise              -> Just $ M.insert dstLocation srcValue state
 eval _ _                                              = Nothing
+
+-- | Evaluates a list of instructions starting with an 'initialState' by
+-- sequentially applying the 'eval' method.
+evalFold :: [H.Instruction] -> Maybe State
+evalFold = foldM eval initialState
 

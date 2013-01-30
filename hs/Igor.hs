@@ -9,10 +9,15 @@ module Igor
 , State
 , ExpressionValue (..)
 , Expression (..)
+, MatchTarget
+, Match
 -- * Methods
 , valueOf
+-- ** Evaluation
 , eval
 , evalFold
+-- ** Expression Matching
+, match
 ) where
 import Control.Monad
 import Data.Int
@@ -45,7 +50,7 @@ data Flag = NoFlag
 -- | If you think of the state of a machine as a dictionary, Locations are keys,
 -- and include things like memory locations, registers and status flags.
 data Location = MemoryLocation Address
-              -- | MemoryExpression
+              -- MemoryExpression
               | RegisterLocation Register 
               | FlagLocation Flag
   deriving (Ord, Eq, Show)
@@ -59,15 +64,29 @@ type State = M.Map Location Expression
 initialState :: State
 initialState = M.empty
 
+type Variable = String
+
 data ExpressionValue = InitialValue Location
                      | Constant Value
-                     | ExpressionVariable String
   deriving (Ord, Eq, Show)
 
 data Expression = Immediate ExpressionValue
                 | Plus Expression Expression
                 | Minus Expression Expression
+                | ExpressionVariable Variable
   deriving (Ord, Eq, Show)
+
+-- | Match data is a mapping of 'Variable's to 'ExpressionValue's.
+type Match = M.Map Variable ExpressionValue
+
+-- | The target expressions to 'match' against. The target a 'Variable',
+-- 'Expression' pair where the 'Variable' corresponds to a location mapping to
+-- the desired 'Expression' in a given execution 'State'.
+type MatchTarget = (Variable, Expression)
+
+--------------------------------------------------------------------------------
+-- Misc methods
+--------------------------------------------------------------------------------
 
 -- | Returns the value of a location given a state. If the value has not been
 -- assigned since the beginning of the evaluation then it returns the initial
@@ -77,6 +96,7 @@ valueOf Nothing _             = Nothing
 valueOf (Just location) state = case M.lookup location state of
   Just expr -> return expr
   Nothing -> return $ Immediate $ InitialValue location
+
 
 --------------------------------------------------------------------------------
 -- Eval methods
@@ -99,7 +119,7 @@ gprToRegister _ = Nothing
 operandToLocation :: H.Operand -> Maybe Location
 --operandToLocation (OpAddr addr _) = MemoryLocation addr
 operandToLocation (H.Reg (H.Reg32 reg)) = (gprToRegister reg) >>= return . RegisterLocation
-operandToLocation _ = Nothing
+operandToLocation _                     = Nothing
 
 -- | Grab the expression corresponding to an operand given the state of
 -- execution.
@@ -107,7 +127,9 @@ operandToExpression :: H.Operand -> State -> Maybe Expression
 operandToExpression (H.Imm word) _ = Just $ Immediate $ Constant (fromIntegral $ H.iValue word)
 operandToExpression location state = valueOf (operandToLocation location) state
 
--- | Evaluates a single instruction.
+-- | Evaluates a single instruction, if we are unable to emulate the instruction
+-- eval will return `Nothing`, otherwise it will return `Just` the resulting
+-- state.
 eval :: State -> H.Instruction -> Maybe State 
 eval state instruction@(H.Inst {H.inOpcode = H.Inop}) = Just state
 eval state instruction@(H.Inst {H.inOpcode = H.Iinc}) = do
@@ -129,3 +151,57 @@ eval _ _                                              = Nothing
 evalFold :: [H.Instruction] -> Maybe State
 evalFold = foldM eval initialState
 
+
+--------------------------------------------------------------------------------
+-- Matching methods
+--------------------------------------------------------------------------------
+
+-- | Finds all possible matches for the given target expressions given the
+-- current state of execution.
+match :: [MatchTarget] -> State -> [Match]
+match target state = []
+
+-- | Attempts to union two 'Match'es. It is successful if the two matches either
+-- do not contain overlapping variables, or if they do contain overlapping
+-- variables, those variables correspond to the exact same expression.
+matchUnion :: Match -> Match -> Maybe Match
+matchUnion x y =
+  -- Check if all of the values in the intersection of the key space of x and y
+  -- are equivalent.
+  if and $ M.elems $ M.intersectionWith (\a b -> a == b) x y
+  then Just $ M.union x y
+  else Nothing
+  
+-- TODO I seem to have run into a possible problem, though one easily solved.
+-- Should there be a different map for the variables given in the pairing? Upon
+-- consideration it would seem that they are in fact different types of
+-- variables all together! For they are intended to map to complicated
+-- expressions (located at a specific location), whereas ExpressionVariables are
+-- meant to map to constants (with respect to the sequence of instructions).
+-- | Match a single 'MatchTarget' with a given 'State'.
+matchSingle :: MatchTarget -> State -> [Match]
+matchSingle (variable,target) state = do
+  (location,expression) <- (M.assocs state)
+  let matchResult = (do
+      result <- matchExpression target expression
+      --matchUnion (M.insert variable location M.empty) result
+      return result
+      )
+  guard (isJust matchResult)
+  return $ fromJust matchResult
+
+-- | Attempt to match an 'Expression' (taken from a 'MatchTarget') with a given
+-- 'Expression'.
+matchExpression :: Expression -> Expression -> Maybe Match
+matchExpression (Immediate val1) (Immediate val2) = Just M.empty
+matchExpression (Plus target1 target2) (Plus exp1 exp2)       = do
+  match1 <- matchExpression target1 exp1
+  match2 <- matchExpression target2 exp2
+  matchUnion match1 match2
+matchExpression (Minus target1 target2) (Minus exp1 exp2)     = do
+  match1 <- matchExpression target1 exp1
+  match2 <- matchExpression target2 exp2
+  matchUnion match1 match2
+matchExpression (ExpressionVariable variable) (Immediate val) = 
+  return $ M.insert variable val M.empty
+matchExpression _ _ = Nothing

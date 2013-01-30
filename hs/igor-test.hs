@@ -28,11 +28,9 @@ main = do
   where
   -- Pretty print the instructions
   showInstructions instructions = do
-    let partialInstructions = inits $ map snd instructions
+    let partialInstructions = tail $ inits $ map snd instructions
     let results = map evalFold partialInstructions
     putStr "-------------------------------\n"
-    putStr . unlines $ map fst instructions
-    putStr "\nEval results:\n"
-    putStr . unlines $ map show results
+    putStr . unlines $ zipWith (\a b -> a ++ "\n=> " ++ b) (map fst instructions) (map show results)
     putStr "\n"
 

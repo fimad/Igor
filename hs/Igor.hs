@@ -16,6 +16,7 @@ module Igor
 ) where
 import Control.Monad
 import Data.Int
+import Data.Maybe
 import Data.Word
 import System.Random
 import qualified Hdis86.Types as H
@@ -43,8 +44,7 @@ data Flag = NoFlag
 
 -- | If you think of the state of a machine as a dictionary, Locations are keys,
 -- and include things like memory locations, registers and status flags.
-data Location = InvalidLocation
-              | MemoryLocation Address
+data Location = MemoryLocation Address
               -- | MemoryExpression
               | RegisterLocation Register 
               | FlagLocation Flag
@@ -67,17 +67,16 @@ data ExpressionValue = InitialValue Location
 data Expression = Immediate ExpressionValue
                 | Plus Expression Expression
                 | Minus Expression Expression
-                | InvalidExpression
   deriving (Ord, Eq, Show)
 
 -- | Returns the value of a location given a state. If the value has not been
 -- assigned since the beginning of the evaluation then it returns the initial
 -- value expression.
-valueOf :: Location -> State -> Expression
-valueOf InvalidLocation _ = InvalidExpression
-valueOf location state    = case M.lookup location state of
-  Just expr -> expr
-  Nothing -> Immediate $ InitialValue location
+valueOf :: Maybe Location -> State -> Maybe Expression
+valueOf Nothing _             = Nothing
+valueOf (Just location) state = case M.lookup location state of
+  Just expr -> return expr
+  Nothing -> return $ Immediate $ InitialValue location
 
 --------------------------------------------------------------------------------
 -- Eval methods
@@ -97,31 +96,32 @@ gprToRegister H.RSI = Just ESI
 gprToRegister _ = Nothing
 
 -- | Convert an operand into a location
-operandToLocation :: H.Operand -> Location
+operandToLocation :: H.Operand -> Maybe Location
 --operandToLocation (OpAddr addr _) = MemoryLocation addr
-operandToLocation (H.Reg (H.Reg32 reg)) = case gprToRegister reg of
-  Just r -> RegisterLocation r
-  Nothing -> InvalidLocation
-operandToLocation _ = InvalidLocation
+operandToLocation (H.Reg (H.Reg32 reg)) = (gprToRegister reg) >>= return . RegisterLocation
+operandToLocation _ = Nothing
 
 -- | Grab the expression corresponding to an operand given the state of
 -- execution.
-operandToExpression :: H.Operand -> State -> Expression
-operandToExpression (H.Imm word) _ = Immediate $ Constant (fromIntegral $ H.iValue word)
+operandToExpression :: H.Operand -> State -> Maybe Expression
+operandToExpression (H.Imm word) _ = Just $ Immediate $ Constant (fromIntegral $ H.iValue word)
 operandToExpression location state = valueOf (operandToLocation location) state
 
 -- | Evaluates a single instruction.
 eval :: State -> H.Instruction -> Maybe State 
 eval state instruction@(H.Inst {H.inOpcode = H.Inop}) = Just state
-eval state instruction@(H.Inst {H.inOpcode = H.Imov}) = let
-    [dst,src] = H.inOperands instruction
-    dstLocation = operandToLocation dst
-    srcValue = operandToExpression src state
-  in
-    case (dstLocation,srcValue) of
-      (InvalidLocation, _)   -> Nothing
-      (_, InvalidExpression) -> Nothing
-      otherwise              -> Just $ M.insert dstLocation srcValue state
+eval state instruction@(H.Inst {H.inOpcode = H.Iinc}) = do
+  dst <- listToMaybe $ H.inOperands instruction
+  dstLocation <- operandToLocation dst
+  dstExpr <- operandToExpression dst state
+  let dstValue =  Plus (Immediate $ Constant 1) dstExpr
+  return $ M.insert dstLocation dstValue state
+eval state instruction@(H.Inst {H.inOpcode = H.Imov}) = do
+  dst <- listToMaybe $ H.inOperands instruction
+  src <- listToMaybe $ drop 1 $ H.inOperands instruction
+  dstLocation <- operandToLocation dst
+  srcValue <- operandToExpression src state
+  return $ M.insert dstLocation srcValue state
 eval _ _                                              = Nothing
 
 -- | Evaluates a list of instructions starting with an 'initialState' by

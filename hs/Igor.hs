@@ -61,9 +61,6 @@ data Location = MemoryLocation Address
 -- are special things to take into consideration after such things occur.
 type State = M.Map Location Expression
 
-initialState :: State
-initialState = M.empty
-
 type Variable = String
 
 data ExpressionValue = InitialValue Location
@@ -76,17 +73,27 @@ data Expression = Immediate ExpressionValue
                 | ExpressionVariable Variable
   deriving (Ord, Eq, Show)
 
--- | Match data is a mapping of 'Variable's to 'ExpressionValue's.
-type Match = M.Map Variable ExpressionValue
+-- | Maps from a 'Variable' to an 'ExpressionValue'. Is used as the second
+-- element of a 'Match' pair.
+type VariableMap = M.Map Variable ExpressionValue
 
--- | The target expressions to 'match' against. The target a 'Variable',
+-- | Match data is a location which corresponds to the location of the matched
+-- expression, a mapping of 'Variable's to 'ExpressionValue's, and a list of
+-- clobbered Locations.
+type Match = (Location, VariableMap, [Location])
+
+-- | The target expression to 'match' against. 
 -- 'Expression' pair where the 'Variable' corresponds to a location mapping to
 -- the desired 'Expression' in a given execution 'State'.
-type MatchTarget = (Variable, Expression)
+type MatchTarget = Expression
 
 --------------------------------------------------------------------------------
 -- Misc methods
 --------------------------------------------------------------------------------
+
+-- | A 'State' that corresponds to the beginning of execution.
+initialState :: State
+initialState = M.empty
 
 -- | Returns the value of a location given a state. If the value has not been
 -- assigned since the beginning of the evaluation then it returns the initial
@@ -156,15 +163,10 @@ evalFold = foldM eval initialState
 -- Matching methods
 --------------------------------------------------------------------------------
 
--- | Finds all possible matches for the given target expressions given the
--- current state of execution.
-match :: [MatchTarget] -> State -> [Match]
-match target state = []
-
 -- | Attempts to union two 'Match'es. It is successful if the two matches either
 -- do not contain overlapping variables, or if they do contain overlapping
 -- variables, those variables correspond to the exact same expression.
-matchUnion :: Match -> Match -> Maybe Match
+matchUnion :: VariableMap -> VariableMap -> Maybe VariableMap
 matchUnion x y =
   -- Check if all of the values in the intersection of the key space of x and y
   -- are equivalent.
@@ -172,27 +174,18 @@ matchUnion x y =
   then Just $ M.union x y
   else Nothing
   
--- TODO I seem to have run into a possible problem, though one easily solved.
--- Should there be a different map for the variables given in the pairing? Upon
--- consideration it would seem that they are in fact different types of
--- variables all together! For they are intended to map to complicated
--- expressions (located at a specific location), whereas ExpressionVariables are
--- meant to map to constants (with respect to the sequence of instructions).
 -- | Match a single 'MatchTarget' with a given 'State'.
-matchSingle :: MatchTarget -> State -> [Match]
-matchSingle (variable,target) state = do
+match :: MatchTarget -> State -> [Match]
+match target state = do
   (location,expression) <- (M.assocs state)
-  let matchResult = (do
-      result <- matchExpression target expression
-      --matchUnion (M.insert variable location M.empty) result
-      return result
-      )
-  guard (isJust matchResult)
-  return $ fromJust matchResult
+  let maybeVariableMap = matchExpression target expression
+  guard (isJust maybeVariableMap)
+  let variableMap = fromJust maybeVariableMap
+  return $ (location, variableMap, M.keys $ M.delete location state)
 
 -- | Attempt to match an 'Expression' (taken from a 'MatchTarget') with a given
 -- 'Expression'.
-matchExpression :: Expression -> Expression -> Maybe Match
+matchExpression :: Expression -> Expression -> Maybe VariableMap
 matchExpression (Immediate val1) (Immediate val2) = Just M.empty
 matchExpression (Plus target1 target2) (Plus exp1 exp2)       = do
   match1 <- matchExpression target1 exp1

@@ -25,11 +25,11 @@ data Register = EAX
               | EBP
               | EDI
               | ESI
-    deriving (Ord, Eq, Show)
+    deriving (Ord, Eq, Show, Read)
 
 -- | Todo: Find out what some flags are?
 data Flag = NoFlag
-    deriving (Ord, Eq, Show)
+    deriving (Ord, Eq, Show, Read)
 
 -- | If you think of the state of a machine as a dictionary, Locations are keys,
 -- and include things like memory locations, registers and status flags.
@@ -37,11 +37,11 @@ data Location = MemoryLocation Address
               -- MemoryExpression
               | RegisterLocation Register 
               | FlagLocation Flag
-    deriving (Ord, Eq, Show)
+    deriving (Ord, Eq, Show, Read)
 
 data Expression = InitialValue Location
                 | Constant Value
                 | Plus Expression Expression
                 | Minus Expression Expression
-    deriving (Ord, Eq, Show)
+    deriving (Ord, Eq, Show, Read)
 

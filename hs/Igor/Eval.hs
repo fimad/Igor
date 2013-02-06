@@ -72,8 +72,8 @@ operandToExpression location state = valueOf (operandToLocation location) state
 
 -- | Evaluates a list of instructions starting with an 'initialState' by
 -- sequentially applying the 'eval' method.
-eval :: [H.Instruction] -> Maybe State
-eval = foldM eval' initialState
+eval :: [H.Metadata] -> Maybe State
+eval = foldM (\s m -> eval' s $ H.mdInst m) initialState
 
 -- | Evaluates a single instruction, if we are unable to emulate the instruction
 -- eval will return `Nothing`, otherwise it will return `Just` the resulting

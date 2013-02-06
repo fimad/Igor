@@ -3,6 +3,7 @@ module Igor.Gadget
 -- * Types
   Gadget (..)
 , ClobberList
+, Match (..)
 -- * Methods
 , match
 ) where
@@ -19,7 +20,7 @@ data Gadget = NoOp
             | LoadConst X.Register X.Value
             | Plus X.Register (S.Set X.Register)
             | Minus X.Register X.Register X.Register
-    deriving (Ord, Eq, Show)
+    deriving (Ord, Eq, Show, Read)
 
 type ClobberList = [X.Location]
 -- | A match is an instantiated gadget and a list of clobbered locations.

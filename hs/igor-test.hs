@@ -20,10 +20,6 @@ randomDisas numBytes = do
     []        -> randomDisas numBytes
     otherwise -> return $ map (\m -> (mdAssembly m, mdInst m)) result
 
--- | A gadget that captures registers and constants being moved into a location
-moveGadget :: MatchTarget
-moveGadget = ExpressionVariable "source"
-
 main :: IO ()
 main = do
   -- | Grab a list of random instruction lists
@@ -35,7 +31,7 @@ main = do
   showInstructions instructions = do
     let partialInstructions = tail $ inits $ map snd instructions
     let results = map evalFold partialInstructions
-    let results' = map (>>= (\s -> return (s, match moveGadget s))) results
+    let results' = map (>>= (\s -> return (s, match s))) results
     putStrLn "-------------------------------"
     sequence_ $ map prettyPrintResults $ zip (map fst instructions) results'
     putStr "\n"
@@ -51,10 +47,8 @@ main = do
     putStrLn "\tState:"
     sequence_ $ map (\(l,v)-> putStrLn $ "\t\t"++(show l)++" <- "++(show v)) (M.toList state)
 
-  prettyPrintMatch (location,varMap,clobbered) = do
+  prettyPrintMatch (gadget,clobbered) = do
     putStrLn "\tMatching: "
-    putStrLn $ "\t\tLocation: " ++ (show location)
-    putStrLn $ "\t\tVariables: " 
-    sequence_ $ map (\(var,val) -> putStrLn $ "\t\t\t"++(show var)++" <- "++(show val)) $ M.toList varMap
+    putStrLn $ "\t\tGadget: " ++ (show gadget)
     putStr "\t\tClobbering: "
     putStrLn $ unwords $ intersperse "," (map show clobbered)

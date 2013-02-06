@@ -9,7 +9,6 @@ module Igor
 , State
 , ExpressionValue (..)
 , Expression (..)
-, MatchTarget
 , Match
 -- * Methods
 , valueOf
@@ -24,6 +23,7 @@ import Data.Int
 import Data.Maybe
 import Data.Word
 import System.Random
+import Data.Set (Set, fromList)
 import qualified Hdis86.Types as H
 import qualified Data.Map as M
 
@@ -77,15 +77,16 @@ data Expression = Immediate ExpressionValue
 -- element of a 'Match' pair.
 type VariableMap = M.Map Variable ExpressionValue
 
--- | Match data is a location which corresponds to the location of the matched
--- expression, a mapping of 'Variable's to 'ExpressionValue's, and a list of
--- clobbered Locations.
-type Match = (Location, VariableMap, [Location])
+-- | A match is an instantiated gadget and a list of clobbered locations.
+type Match = (Gadget, [Location])
 
--- | The target expression to 'match' against. 
--- 'Expression' pair where the 'Variable' corresponds to a location mapping to
--- the desired 'Expression' in a given execution 'State'.
-type MatchTarget = Expression
+-- | The types of basic computational units that are paramaterized
+data Gadget = NoOp
+            | LoadReg Register Register
+            | LoadConst Register Value
+            | PlusGadget Register (Set Register)
+            | MinusGadget Register Register Register
+  deriving (Ord, Eq, Show)
 
 --------------------------------------------------------------------------------
 -- Misc methods
@@ -151,6 +152,18 @@ eval state instruction@(H.Inst {H.inOpcode = H.Imov}) = do
   dstLocation <- operandToLocation dst
   srcValue <- operandToExpression src state
   return $ M.insert dstLocation srcValue state
+eval state instruction@(H.Inst {H.inOpcode = H.Iadd}) = do
+  dst <- listToMaybe $ H.inOperands instruction
+  src <- listToMaybe $ drop 1 $ H.inOperands instruction
+  dstLocation <- operandToLocation dst
+  srcValue <- operandToExpression src state
+  return $ M.insert dstLocation (Plus (Immediate $ InitialValue dstLocation) srcValue) state
+eval state instruction@(H.Inst {H.inOpcode = H.Isub}) = do
+  dst <- listToMaybe $ H.inOperands instruction
+  src <- listToMaybe $ drop 1 $ H.inOperands instruction
+  dstLocation <- operandToLocation dst
+  srcValue <- operandToExpression src state
+  return $ M.insert dstLocation (Minus (Immediate $ InitialValue dstLocation) srcValue) state
 eval _ _                                              = Nothing
 
 -- | Evaluates a list of instructions starting with an 'initialState' by
@@ -162,39 +175,42 @@ evalFold = foldM eval initialState
 --------------------------------------------------------------------------------
 -- Matching methods
 --------------------------------------------------------------------------------
-
--- | Attempts to union two 'Match'es. It is successful if the two matches either
--- do not contain overlapping variables, or if they do contain overlapping
--- variables, those variables correspond to the exact same expression.
-matchUnion :: VariableMap -> VariableMap -> Maybe VariableMap
-matchUnion x y =
-  -- Check if all of the values in the intersection of the key space of x and y
-  -- are equivalent.
-  if and $ M.elems $ M.intersectionWith (\a b -> a == b) x y
-  then Just $ M.union x y
-  else Nothing
   
--- | Match a single 'MatchTarget' with a given 'State'.
-match :: MatchTarget -> State -> [Match]
-match target state = do
+-- | Find all of the gadget matches for a given state.
+match :: State -> [Match]
+match state = do
   (location,expression) <- (M.assocs state)
-  let maybeVariableMap = matchExpression target expression
-  guard (isJust maybeVariableMap)
-  let variableMap = fromJust maybeVariableMap
-  return $ (location, variableMap, M.keys $ M.delete location state)
+  (gadget,nonClobbered) <- matchGadgets location expression
+  return $ (gadget, M.keys $ foldl (flip M.delete) state nonClobbered)
 
--- | Attempt to match an 'Expression' (taken from a 'MatchTarget') with a given
--- 'Expression'.
-matchExpression :: Expression -> Expression -> Maybe VariableMap
-matchExpression (Immediate val1) (Immediate val2) = Just M.empty
-matchExpression (Plus target1 target2) (Plus exp1 exp2)       = do
-  match1 <- matchExpression target1 exp1
-  match2 <- matchExpression target2 exp2
-  matchUnion match1 match2
-matchExpression (Minus target1 target2) (Minus exp1 exp2)     = do
-  match1 <- matchExpression target1 exp1
-  match2 <- matchExpression target2 exp2
-  matchUnion match1 match2
-matchExpression (ExpressionVariable variable) (Immediate val) = 
-  return $ M.insert variable val M.empty
-matchExpression _ _ = Nothing
+-- | Match a given 
+matchGadgets :: Location -- ^ The source of the current expression
+            -> Expression -- ^ The expression to test against
+            -> [(Gadget,[Location])] -- ^ A list of pairs of gadgets and their used locations that match the expression
+matchGadgets source expression = catMaybes $ map ($expression) gadgetMatchers
+  where
+    gadgetMatchers = map ($source) [
+        matchNoOp
+      , matchLoadReg
+      , matchLoadConst
+      , matchPlus
+      , matchMinus
+      ]
+
+    matchNoOp _ _ = Just (NoOp, [])
+
+    matchLoadReg srcLoc@(RegisterLocation srcReg) (Immediate (InitialValue dstLoc@(RegisterLocation dstReg))) =
+      Just (LoadReg srcReg dstReg, [srcLoc])
+    matchLoadReg _ _ = Nothing
+
+    matchLoadConst srcLoc@(RegisterLocation srcReg) (Immediate (Constant value)) =
+      Just (LoadConst srcReg value, [srcLoc])
+    matchLoadConst _ _ = Nothing
+
+    matchPlus srcLoc@(RegisterLocation srcReg) (Plus (Immediate (InitialValue (RegisterLocation reg1))) (Immediate (InitialValue (RegisterLocation reg2)))) =
+      Just (PlusGadget srcReg (fromList [reg1, reg2]), [srcLoc])
+    matchPlus _ _ = Nothing
+
+    matchMinus srcLoc@(RegisterLocation srcReg) (Minus (Immediate (InitialValue (RegisterLocation reg1))) (Immediate (InitialValue (RegisterLocation reg2)))) =
+      Just (MinusGadget srcReg reg1 reg2, [srcLoc])
+    matchMinus _ _ = Nothing

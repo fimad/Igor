@@ -6,10 +6,9 @@ module Igor.Gadget.Discovery
 , discover
 ) where
 
-import              Control.Applicative
 import              Data.List
-import qualified    Data.Map as     M
-import qualified    Data.Set as     S
+import qualified    Data.Map    as M
+import qualified    Data.Set    as S
 import              Data.Maybe
 import              Igor.ByteModel
 import              Igor.Eval

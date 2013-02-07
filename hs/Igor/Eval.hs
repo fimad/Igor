@@ -11,8 +11,8 @@ module Igor.Eval
 
 import              Control.Monad
 import              Data.Maybe
-import qualified    Data.Map   as M
-import qualified    Hdis86.Types as H
+import qualified    Data.Map        as M
+import qualified    Hdis86.Types    as H
 import              Igor.Expr
 
 
@@ -109,6 +109,6 @@ eval' state instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Isub})   = do
     dstLocation <- operandToLocation dst
     srcValue    <- operandToExpression src state
     return $ M.insert dstLocation (Minus (InitialValue dstLocation) srcValue) state
- 
+
 eval' _ _                                                                   = Nothing
 

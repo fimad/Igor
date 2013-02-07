@@ -8,11 +8,11 @@ module Igor.Gadget
 , match
 ) where
 
-import qualified    Data.Set   as S
-import qualified    Data.Map   as M
+import qualified    Data.Set    as S
+import qualified    Data.Map    as M
 import              Data.Maybe
 import              Igor.Eval
-import qualified    Igor.Expr  as X
+import qualified    Igor.Expr   as X
 
 -- | The types of basic computational units that are paramaterized
 data Gadget = NoOp
@@ -22,7 +22,8 @@ data Gadget = NoOp
             | Minus X.Register X.Register X.Register
     deriving (Ord, Eq, Show, Read)
 
-type ClobberList = [X.Location]
+--type ClobberList = [X.Location]
+type ClobberList = S.Set X.Location
 -- | A match is an instantiated gadget and a list of clobbered locations.
 type Match = (Gadget, ClobberList)
   
@@ -32,7 +33,7 @@ match :: State -> [Match]
 match state = do
     (location,expression) <- (M.assocs state)
     (gadget,nonClobbered) <- matchGadgets location expression
-    return (gadget, M.keys $ foldl (flip M.delete) state nonClobbered)
+    return (gadget, M.keys $ S.foldl (flip M.delete) state nonClobbered)
 
 -- | Create a list of all of the
 matchGadgets :: X.Location -- ^ The source of the current expression

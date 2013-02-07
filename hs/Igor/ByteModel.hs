@@ -9,7 +9,7 @@ module Igor.ByteModel
 ) where
 
 import              Data.Word
-import qualified    Data.ByteString as  B
+import qualified    Data.ByteString as B
 import              Hdis86
 import              Hdis86.Types
 import              System.Random

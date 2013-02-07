@@ -1,24 +1,26 @@
+import              Control.Monad.State
 import              Data.Binary
-import              Hdis86.Types
+import qualified    Data.ByteString.Char8 as BS
 import qualified    Data.Map        as M
 import qualified    Data.Set        as S
-import              Igor
-import              Igor.ByteModel
-import              Igor.Gadget
+import              Igor.CodeGen
 import              Igor.Gadget.Discovery
-import qualified    Data.ByteString.Char8 as BS
+import              Hdis86
+import              Hdis86.Types
 
 main :: IO ()
 main = do
     library <- decodeFile "library" :: IO GadgetLibrary
-    sequence_ $ map prettyPrint $ M.toList library
+    case generate library testProgram of
+        Nothing         -> putStrLn "Could not generate :("
+        Just metaList   -> do
+            sequence_ $ map (putStrLn . mdAssembly) metaList
 
-    where
-        prettyPrint (gadget, instances) = do
-            putStrLn $ "Gadget: " ++ show gadget
-            sequence_ $ map prettyPrint' $ S.toList instances
-
-        prettyPrint' (meta, clobbered) = do
-            putStr $ unlines . map (("\t"++) . mdAssembly) $ meta
-            putStrLn $ "\tClobbered: " ++ show clobbered
-            putStrLn $ "\t" ++ replicate 40 '-' ++ "\n"
+testProgram :: PredicateProgram
+testProgram = do
+    [v1,v2,v3] <- makeVariables 3
+    move v1 v2
+    move v1 v3
+    move v2 v2
+    move v3 v1
+    add v1 v2 v1

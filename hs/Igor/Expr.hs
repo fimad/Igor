@@ -28,7 +28,7 @@ data Register = EAX
               | EBP
               | EDI
               | ESI
-    deriving (Ord, Eq, Show, Read)
+    deriving (Ord, Eq, Show, Read, Enum, Bounded)
 
 -- | Todo: Find out what some flags are?
 data Flag = NoFlag

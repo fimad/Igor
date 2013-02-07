@@ -1,11 +1,16 @@
+{-# LANGUAGE TemplateHaskell #-}
 module Igor.Gadget.Discovery
 ( 
 -- * Types
   GadgetLibrary
 -- * Methods
+, emptyLibrary
+, merge
 , discover
 ) where
 
+import              Data.Binary
+import              Data.DeriveTH
 import              Data.List
 import qualified    Data.Map    as M
 import qualified    Data.Set    as S
@@ -15,7 +20,32 @@ import              Igor.Eval
 import              Igor.Gadget
 import              Hdis86.Types
 
-type GadgetLibrary = M.Map Gadget (S.Set ([Metadata], ClobberList))
+type GadgetLibrary  = M.Map Gadget (S.Set ([Metadata], ClobberList))
+
+$( derive makeBinary ''XMMRegister)
+$( derive makeBinary ''X87Register)
+$( derive makeBinary ''MMXRegister)
+$( derive makeBinary ''DebugRegister)
+$( derive makeBinary ''ControlRegister)
+$( derive makeBinary ''Segment)
+$( derive makeBinary ''Half)
+$( derive makeBinary ''GPR)
+$( derive makeBinary ''WordSize)
+$( derive makeBinary ''Prefix)
+$( derive makeBinary ''Immediate )
+$( derive makeBinary ''Pointer )
+$( derive makeBinary ''Register )
+$( derive makeBinary ''Memory )
+$( derive makeBinary ''Opcode )
+$( derive makeBinary ''Operand )
+$( derive makeBinary ''Instruction )
+$( derive makeBinary ''Metadata )
+
+emptyLibrary :: GadgetLibrary
+emptyLibrary = M.empty
+
+merge :: GadgetLibrary -> GadgetLibrary -> GadgetLibrary
+merge a b = M.unionWith S.union a b
 
 -- | Given a target size and an instruction 'Metadata' 'Generator', builds a
 -- library of gadgets of that is at least as large as the target size.

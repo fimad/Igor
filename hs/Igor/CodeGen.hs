@@ -14,13 +14,16 @@ module Igor.CodeGen
 , noop
 ) where
 
-import qualified    Data.Map    as M
+import              Data.Function
+import qualified    Data.Map                as M
 import              Data.Maybe
-import qualified    Data.Set    as S
+import qualified    Data.Set                as S
 import              Data.Random.List
 import              Data.Random.Sample
-import qualified    Igor.Expr   as X
-import qualified    Igor.Gadget as G
+import qualified    Igor.Expr               as X
+import qualified    Igor.Gadget             as G
+import qualified    Igor.Gadget.Discovery   as D
+import              Hdis86
 
 -- So for predicates, if we keep location pools for unused locations, and a
 -- mapping of variables to locations. 
@@ -53,7 +56,7 @@ import qualified    Igor.Gadget as G
 type Variable       = Int
 type LocationPool   = S.Set X.Location
 type VariableMap    = M.Map Variable X.Location
-type CodeGenState   = (G.GadgetLibrary, VariableMap, LocationPool)
+type CodeGenState   = (D.GadgetLibrary, VariableMap, LocationPool)
 
 type Predicate      = CodeGenState -> (CodeGenState,Maybe [Metadata])
 
@@ -67,16 +70,13 @@ noop = makePredicate [G.NoOp]
 move :: Variable -> Variable -> Predicate
 move a b = makePredicate2 move' a b
     where
-        move' (RegisterLocation a) (RegisterLocation b) = [G.LoadReg a b]
+        move' (X.RegisterLocation a) (X.RegisterLocation b) = [G.LoadReg a b]
         move' _ _ = []
 
-add :: Variable -> Variable -> Predicate
+add :: Variable -> Variable -> Variable -> Predicate
 add a b c = makePredicate3 add' a b c
     where
-        add' (RegisterLocation a)(RegisterLocation b) (RegisterLocation c)
-            | a == b    = [G.Plus a $ S.fromList [a,c]]
-            | a == c    = [G.Plus a $ S.fromList [a,b]]
-            | otherwise = 
+        add' (X.RegisterLocation a) (X.RegisterLocation b) (X.RegisterLocation c) = [G.Plus a $ S.fromList [b,c]]
         add' _ _ _ = []
 
 --------------------------------------------------------------------------------
@@ -87,54 +87,28 @@ makePredicate1 :: (X.Location -> [G.Gadget]) -> Variable -> Predicate
 makePredicate1 generator a state = makePredicate (generator $ varToLoc state a) state
 
 makePredicate2 :: (X.Location -> X.Location -> [G.Gadget]) -> Variable -> Variable -> Predicate
-makePredicate2 generator a b state = makePredicate ((varToLoc state `on` generator) a b) state
+makePredicate2 generator a b state = makePredicate ((generator `on` varToLoc state) a b) state
 
 makePredicate3 :: (X.Location -> X.Location -> X.Location -> [G.Gadget]) -> Variable -> Variable -> Variable -> Predicate
-makePredicate3 generator a b c state = makePredicate ((varToLoc state `on` generator) a b $ varToLoc state c) state
+makePredicate3 generator a b c state = makePredicate ((generator `on` varToLoc state) a b $ varToLoc state c) state
 
 makePredicate :: [G.Gadget] -> Predicate
-makePredicate (g::_) state@(library,variables,freeLocations) = 
+makePredicate (g:_) state@(library,variables,freeLocations) = 
     -- Attempt to find a gadget in a Maybe monad
     let result = do
-        gadgets                                 <- M.lookup g library
-        let (meta, clobbered)                   = head $ S.toList gadgets
-        (metaShuffle, newVariables, newFree)    <- shuffleVariables variables freeLocations
-        return $ ((library,newVariables,newFree), Just metaShuffle ++ meta)
-    -- If it is unsuccessful we still have to return a state, but we can return
-    -- Nothing for the result of the computation.
-    in case result of
-        Nothing -> (state,Nothing)
-        Just a -> a
+        gadgets         <- M.lookup g library
+        let (meta, _)   = head $ filter doesNotClobber $ S.toList gadgets
+        return $ meta
+    in (state, result)
     where
-        shuffleVariables :: VariableMap -> LocationPool -> Maybe ([Metadata],VariableMap,LocationPool)
-        shuffleVariables variables freeLocations
-            | clobbered `S.intersection` variables == S.empty   =
-                return ([], variables, freeLocations)
-            | freeRegisters S.\\ clobbered /= S.empty           = do
-                let clobberedLoc        = head $ S.toList $ clobbered
-                let freeLoc             = head $ S.toList $ freeRegisters S.\\ clobbered
-                let (RegisterLocation freeReg) = freeLoc
-                gadget                  <- case clobberedLoc of
-                                            (RegisterLocation locReg)   -> Just $ G.loadReg freeReg locReg
-                                            _                           -> Nothing
-                (meta,_)                <- listToMaybe $ filter ... $ S.toList $ M.lookup g library
-                clobberedVar            <- locToVar clobberedVar
-                (nextMeta,varMap,free)  <- shuffleVariables 
-                return (meta++nextMeta, varMap, free)
-            -- Ignore this case for now....
-            | otherwise                                         =
-                Nothing
-        where
-            isRegister (RegisterLocation _) = True
-            isRegister _                    = False
-            freeRegisters = S.map isRegister freeLocations
+        doesNotClobber (_,clobber) = (S.fromList clobber) `S.intersection` (S.fromList $ M.elems $ variables) == S.empty
 
-varToLoc :: CodeGenState -> Variable -> Maybe Location
-varToLoc (_,vars,_) var = M.lookup var vars
+varToLoc :: CodeGenState -> Variable -> X.Location
+varToLoc (_,vars,_) var = fromJust $ M.lookup var vars
 
-locToVar :: CodeGenState -> Location -> Maybe Variable
-locToVar (_,vars,_) targetLoc = M.foldWithKey findLoc Nothing vars 
-    where
-        findLoc var loc res = if loc == targetLoc   then Just var
-                                                    else res
+--locToVar :: CodeGenState -> X.Location -> Maybe Variable
+--locToVar (_,vars,_) targetLoc = M.foldWithKey findLoc Nothing vars 
+--    where
+--        findLoc var loc res = if loc == targetLoc   then Just var
+--                                                    else res
 

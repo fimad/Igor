@@ -1,3 +1,4 @@
+{-# LANGUAGE TemplateHaskell #-}
 module Igor.Expr
 ( 
 -- * Types
@@ -9,7 +10,9 @@ module Igor.Expr
 , Expression (..)
 ) where
 
-import Data.Word
+import              Data.Binary
+import              Data.DeriveTH
+import              Data.Word
 
 type Address = Word32
 
@@ -45,3 +48,7 @@ data Expression = InitialValue Location
                 | Minus Expression Expression
     deriving (Ord, Eq, Show, Read)
 
+$( derive makeBinary ''Register )
+$( derive makeBinary ''Flag )
+$( derive makeBinary ''Location )
+$( derive makeBinary ''Expression )

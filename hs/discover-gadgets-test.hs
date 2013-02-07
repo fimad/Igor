@@ -1,4 +1,3 @@
-import              Data.Binary
 import              Hdis86.Types
 import qualified    Data.Map        as M
 import qualified    Data.Set        as S
@@ -6,11 +5,10 @@ import              Igor
 import              Igor.ByteModel
 import              Igor.Gadget
 import              Igor.Gadget.Discovery
-import qualified    Data.ByteString.Char8 as BS
 
 main :: IO ()
 main = do
-    library <- decodeFile "library" :: IO GadgetLibrary
+    library <- discover 1000 $ generate $ uniform 16
     sequence_ $ map prettyPrint $ M.toList library
 
     where

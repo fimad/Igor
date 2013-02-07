@@ -1,3 +1,4 @@
+{-# LANGUAGE TemplateHaskell #-}
 module Igor.Gadget
 ( 
 -- * Types
@@ -8,6 +9,8 @@ module Igor.Gadget
 , match
 ) where
 
+import              Data.Binary
+import              Data.DeriveTH
 import qualified    Data.Set    as S
 import qualified    Data.Map    as M
 import              Data.Maybe
@@ -21,9 +24,9 @@ data Gadget = NoOp
             | Plus X.Register (S.Set X.Register)
             | Minus X.Register X.Register X.Register
     deriving (Ord, Eq, Show, Read)
+$( derive makeBinary ''Gadget )
 
---type ClobberList = [X.Location]
-type ClobberList = S.Set X.Location
+type ClobberList = [X.Location]
 -- | A match is an instantiated gadget and a list of clobbered locations.
 type Match = (Gadget, ClobberList)
   
@@ -33,15 +36,15 @@ match :: State -> [Match]
 match state = do
     (location,expression) <- (M.assocs state)
     (gadget,nonClobbered) <- matchGadgets location expression
-    return (gadget, M.keys $ S.foldl (flip M.delete) state nonClobbered)
+    return (gadget, M.keys $ foldl (flip M.delete) state nonClobbered)
 
 -- | Create a list of all of the
 matchGadgets :: X.Location -- ^ The source of the current expression
              -> X.Expression -- ^ The expression to test against
              -> [Match] -- ^ A list of pairs of gadgets and their used locations that match the expression
-matchGadgets source expression = catMaybes $ map ($expression) gadgetMatchers
+matchGadgets source expression = catMaybes $ map ($ expression) gadgetMatchers
     where
-        gadgetMatchers = map ($source) [
+        gadgetMatchers = map ($ source) [
               matchNoOp
             , matchLoadReg
             , matchLoadConst

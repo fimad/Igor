@@ -2,11 +2,13 @@ import              Data.Binary
 import              Igor.CodeGen
 import              Igor.Gadget.Discovery
 import              Hdis86
+import              System.Random
 
 main :: IO ()
 main = do
     library <- decodeFile "library" :: IO GadgetLibrary
-    case generate library testProgram of
+    gen     <- newStdGen
+    case generate library gen testProgram of
         Nothing         -> putStrLn "Could not generate :("
         Just metaList   -> do
             sequence_ $ map printMeta metaList
@@ -30,4 +32,4 @@ testProgram = do
     noop
     add v2 v2 v3
     noop
-    jump (-4)
+    jump (0)

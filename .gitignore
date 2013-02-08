@@ -6,6 +6,14 @@
 *.log
 *.pdf
 
+*.tar.*
+
 tags
 *.o
 *.hi
+
+dist/
+doc/
+udis86/
+libemu/
+distorm/

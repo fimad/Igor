@@ -79,6 +79,19 @@ operandToExpression (H.Jump word) _     = Just $ Constant (fromIntegral $ H.iVal
 operandToExpression (H.Const word) _    = Just $ Constant (fromIntegral $ H.iValue word)
 operandToExpression location state      = valueOf (operandToLocation location) state
 
+-- | For simple opcodes that have a direct mapping to an expression,
+-- this function will pull out 2 operands, turn then to expressions and
+-- insert the result into the corresponding source location in the
+-- state.
+buildExpr2 ::  State -> (Expression -> Expression -> Expression) -> [H.Operand] -> Maybe State
+buildExpr2 state expr operands = do
+    dst         <- listToMaybe $ operands
+    src         <- listToMaybe $ drop 1 $ operands
+    dstLocation <- operandToLocation dst
+    srcValue    <- operandToExpression src state
+    dstValue    <- operandToExpression dst state
+    return $ M.insert dstLocation (expr dstValue srcValue) state
+
 -- | Evaluates a list of instructions starting with an 'initialState' by
 -- sequentially applying the 'eval' method.
 eval :: [H.Metadata] -> Maybe State
@@ -147,17 +160,4 @@ eval' state size instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ijmp})  
         _                                           -> Nothing
 
 eval' _ _ _                                                                     = Nothing
-
--- | For simple opcodes that have a direct mapping to an expression,
--- this function will pull out 2 operands, turn then to expressions and
--- insert the result into the corresponding source location in the
--- state.
-buildExpr2 ::  State -> (Expression -> Expression -> Expression) -> [H.Operand] -> Maybe State
-buildExpr2 state expr operands = do
-    dst         <- listToMaybe $ operands
-    src         <- listToMaybe $ drop 1 $ operands
-    dstLocation <- operandToLocation dst
-    srcValue    <- operandToExpression src state
-    dstValue    <- operandToExpression dst state
-    return $ M.insert dstLocation (expr dstValue srcValue) state
 

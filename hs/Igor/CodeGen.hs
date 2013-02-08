@@ -25,12 +25,14 @@ import              Data.Function
 import qualified    Data.Map                as M
 import              Data.Maybe
 import qualified    Data.Set                as S
+import              Data.Random
 import              Data.Random.List
-import              Data.Random.Sample
+--import              Data.Random.Sample
 import qualified    Igor.Expr               as X
 import qualified    Igor.Gadget             as G
 import qualified    Igor.Gadget.Discovery   as D
 import              Hdis86
+import              System.Random
 
 -- TODO:
 --
@@ -102,6 +104,7 @@ type Predicate          = State CodeGenState ()
 
 data CodeGenState       = CodeGenState {
         library             :: D.GadgetLibrary
+    ,   randomGenerator     :: StdGen
     ,   variableMap         :: VariableMap
     ,   locationPool        :: LocationPool
     ,   generatedCode       :: Maybe [Metadata]
@@ -109,9 +112,10 @@ data CodeGenState       = CodeGenState {
     ,   predicateToByte     :: M.Map Integer Integer -- ^ Maps from predicate indices to byte indices
     }
 
-initialState :: CodeGenState
-initialState = CodeGenState {
-        library             = D.emptyLibrary
+initialState :: D.GadgetLibrary -> StdGen -> CodeGenState
+initialState library gen = CodeGenState {
+        library             = library
+    ,   randomGenerator     = gen
     ,   variableMap         = M.empty
     ,   locationPool        = map X.RegisterLocation X.generalRegisters
     ,   generatedCode       = Just []
@@ -157,8 +161,12 @@ jump offset = if offset <= 0
             put state{generatedCode = Nothing}
             return ()
 
-generate :: D.GadgetLibrary -> PredicateProgram -> Maybe [Metadata]
-generate library state = generatedCode $ snd $ runState state $ initialState{library=library}
+--------------------------------------------------------------------------------
+-- External API
+--------------------------------------------------------------------------------
+
+generate :: D.GadgetLibrary -> StdGen -> PredicateProgram -> Maybe [Metadata]
+generate library gen program = generatedCode $ snd $ runState program $ initialState library gen
 
 --makeVariables :: Int -> CodeGenState -> ([Variable],CodeGenState)
 makeVariables :: Int -> State CodeGenState [Variable]
@@ -194,18 +202,20 @@ makePredicate (g:_) = do
     state@(CodeGenState{..}) <- get
     -- Attempt to find a gadget in a Maybe monad
     let result = do
-        gadgets         <- M.lookup g library
-        let (meta, _)   = head $  filter (doesNotClobber variableMap) $ S.toList gadgets
-        prevIndex       <- M.lookup currentPredicate predicateToByte
-        let codeIndex   = prevIndex + (sum $ map (fromIntegral . mdLength) meta)
-        let newCode     = liftM2 (++) generatedCode $ return meta
-        return (newCode, codeIndex)
+        gadgets             <- M.lookup g library
+        let (shuffled,gen)  = sampleState (shuffle $ S.toList gadgets) randomGenerator
+        let (meta, _)       = head $ filter (doesNotClobber variableMap) $ shuffled
+        prevIndex           <- M.lookup currentPredicate predicateToByte
+        let codeIndex       = prevIndex + (sum $ map (fromIntegral . mdLength) meta)
+        let newCode         = liftM2 (++) generatedCode $ return meta
+        return (newCode, codeIndex, gen)
     case result of 
-        Just (newCode, codeIndex)   -> do
+        Just (newCode, codeIndex, gen)   -> do
                                     put state{
                                             generatedCode       = newCode
                                         ,   predicateToByte     = M.insert (currentPredicate+1) codeIndex predicateToByte
                                         ,   currentPredicate    = currentPredicate + 1 
+                                        ,   randomGenerator     = gen
                                         }
                                     return ()
         Nothing                 -> do
@@ -214,6 +224,8 @@ makePredicate (g:_) = do
                                         }
                                     return ()
     where
+        -- | Ensures that a gadget realization does not clobber locations that
+        -- should not be clobbered.
         doesNotClobber variables (_,clobber) = 
             let
                 clobberSet              = (S.fromList clobber)

@@ -12,15 +12,15 @@ module Igor.Gadget.Discovery
 import              Data.Binary
 import              Data.DeriveTH
 import              Data.List
-import qualified    Data.Map    as M
-import qualified    Data.Set    as S
+import qualified    Data.Map        as M
+import qualified    Data.Set        as S
 import              Data.Maybe
 import              Igor.ByteModel
 import              Igor.Eval
-import              Igor.Gadget
+import qualified    Igor.Gadget     as G
 import              Hdis86.Types
 
-type GadgetLibrary  = M.Map Gadget (S.Set ([Metadata], ClobberList))
+type GadgetLibrary  = M.Map G.Gadget (S.Set ([Metadata], G.ClobberList))
 
 $( derive makeBinary ''XMMRegister)
 $( derive makeBinary ''X87Register)
@@ -62,14 +62,14 @@ discover targetSize generator = discover' M.empty
                 discover' newLibrary
 
         -- Insert something produced by process into a gadget library
-        insertIntoLibrary :: (Gadget,([Metadata],ClobberList)) -> GadgetLibrary -> GadgetLibrary
+        insertIntoLibrary :: (G.Gadget,([Metadata],G.ClobberList)) -> GadgetLibrary -> GadgetLibrary
         insertIntoLibrary (gadget, value) library =
             M.insertWith (\a b -> S.union a b) gadget (S.singleton value) library
 
         -- Turn an instruction stream into a list of key value pairs for the
         -- gadget library
-        process :: [Metadata] -> [(Gadget,([Metadata],ClobberList))]
+        process :: [Metadata] -> [(G.Gadget,([Metadata],G.ClobberList))]
         process stream = do
-            (gadget, clobber) <- concat $ maybeToList $ eval stream >>= return . match
+            (gadget, clobber) <- concat $ maybeToList $ eval stream >>= return . G.match
             return (gadget, (stream,clobber))
 

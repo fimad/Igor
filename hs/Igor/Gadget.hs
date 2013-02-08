@@ -17,12 +17,17 @@ import              Data.Maybe
 import              Igor.Eval
 import qualified    Igor.Expr   as X
 
--- | The types of basic computational units that are paramaterized
+-- | The types of basic computational units that are paramaterized. The
+-- convention for multi-parameter gadgets is that the destination location(s)
+-- is/are the first parameter(s).
 data Gadget = NoOp
             | LoadReg X.Register X.Register
             | LoadConst X.Register X.Value
+            | LoadMemReg X.Register X.Register X.Value
+            | StoreMemReg X.Register X.Value X.Register
             | Plus X.Register (S.Set X.Register)
             | Minus X.Register X.Register X.Register
+            | Jump Integer
     deriving (Ord, Eq, Show, Read)
 $( derive makeBinary ''Gadget )
 
@@ -48,8 +53,11 @@ matchGadgets source expression = catMaybes $ map ($ expression) gadgetMatchers
               matchNoOp
             , matchLoadReg
             , matchLoadConst
+            , matchLoadMemReg
+            , matchStoreMemReg
             , matchPlus
             , matchMinus
+            , matchJump
             ]
 
         matchNoOp _ _ = Just (NoOp, [])
@@ -66,6 +74,20 @@ matchGadgets source expression = catMaybes $ map ($ expression) gadgetMatchers
         matchLoadConst _ _ =
                 Nothing
 
+        matchLoadMemReg
+            srcLoc@(X.RegisterLocation srcReg)
+            (X.InitialValue (X.MemoryLocation dstReg offset)) =
+                Just (LoadMemReg srcReg dstReg offset, [srcLoc])
+        matchLoadMemReg _ _ =
+                Nothing
+
+        matchStoreMemReg
+            srcLoc@(X.MemoryLocation srcReg offset)
+            (X.InitialValue (X.RegisterLocation dstReg)) =
+                Just (StoreMemReg srcReg offset dstReg, [srcLoc])
+        matchStoreMemReg _ _ =
+                Nothing
+
         matchPlus
             srcLoc@(X.RegisterLocation srcReg)
             (X.Plus (X.InitialValue (X.RegisterLocation reg1)) (X.InitialValue (X.RegisterLocation reg2))) =
@@ -78,5 +100,12 @@ matchGadgets source expression = catMaybes $ map ($ expression) gadgetMatchers
             (X.Minus (X.InitialValue (X.RegisterLocation reg1)) (X.InitialValue (X.RegisterLocation reg2))) =
                 Just (Minus srcReg reg1 reg2, [srcLoc])
         matchMinus _ _ =
+                Nothing
+
+        matchJump
+            srcLoc@(X.RegisterLocation X.EIP)
+            (X.Constant offset) =
+                Just (Jump $ fromIntegral offset, [X.RegisterLocation X.EIP])
+        matchJump _ _ =
                 Nothing
 

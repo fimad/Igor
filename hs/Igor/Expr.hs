@@ -12,13 +12,14 @@ module Igor.Expr
 
 import              Data.Binary
 import              Data.DeriveTH
+import              Data.Int
 import              Data.Word
 
 type Address = Word32
 
 -- | Since we are only considering 32bit intel machines, values are always going
 -- to fit inside of a 32bit integer. 
-type Value = Word32
+type Value = Int32
 
 data Register = EAX
               | EBX
@@ -28,6 +29,10 @@ data Register = EAX
               | EBP
               | EDI
               | ESI
+                -- | This kind of a lie, the EIP is only adjusted for jumps,
+                -- even though it is actually being adjusted after every
+                -- instruction executes...
+              | EIP 
     deriving (Ord, Eq, Show, Read, Enum, Bounded)
 
 -- | Todo: Find out what some flags are?
@@ -36,8 +41,8 @@ data Flag = NoFlag
 
 -- | If you think of the state of a machine as a dictionary, Locations are keys,
 -- and include things like memory locations, registers and status flags.
-data Location = MemoryLocation Address
-              -- MemoryExpression
+data Location = --MemoryLocation Address
+                MemoryLocation Register Value
               | RegisterLocation Register 
               | FlagLocation Flag
     deriving (Ord, Eq, Show, Read)

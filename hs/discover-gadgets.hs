@@ -19,7 +19,7 @@ main = do
                                     else
                                         return emptyLibrary
             putStrLn "Looking for gadgets..."
-            newLibrary      <- discover 1000 $ generate $ uniform 16
+            newLibrary      <- discover 10000 $ generate $ uniform 16
             mergedLibrary   <- if existingLibrary /= emptyLibrary
                                     then do
                                         putStrLn "Adding newly discovered gadgets..."

@@ -128,7 +128,7 @@ makePredicate (g:_) = do
     -- Attempt to find a gadget in a Maybe monad
     let result = do
         gadgets         <- M.lookup g library
-        let (meta, _)   = head $ filter (doesNotClobber variables) $ S.toList gadgets
+        let (meta, _)   = head $ reverse $ filter (doesNotClobber variables) $ S.toList gadgets
         return meta
     let newCode = liftM2 (++) code result
     put (library,variables,freeLocations, newCode)

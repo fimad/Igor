@@ -9,7 +9,12 @@ main = do
     case generate library testProgram of
         Nothing         -> putStrLn "Could not generate :("
         Just metaList   -> do
-            sequence_ $ map (putStrLn . mdAssembly) metaList
+            sequence_ $ map printMeta metaList
+    where
+        printMeta m = do
+            putStr $ show $ mdLength m
+            putStr " :\t"
+            putStrLn $ mdAssembly m
 
 testProgram :: PredicateProgram
 testProgram = do
@@ -19,3 +24,4 @@ testProgram = do
     move v3 v1
     add v1 v2 v1
     add v2 v2 v3
+    jump (-1)

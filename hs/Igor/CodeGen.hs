@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards #-}
 module Igor.CodeGen
 ( 
 -- * Types
@@ -15,6 +16,7 @@ module Igor.CodeGen
 -- ** Predicates
 , move
 , add
+, jump
 , noop
 ) where
 
@@ -30,41 +32,30 @@ import qualified    Igor.Gadget             as G
 import qualified    Igor.Gadget.Discovery   as D
 import              Hdis86
 
--- So for predicates, if we keep location pools for unused locations, and a
--- mapping of variables to locations. 
---
--- Predicates should be non-deterministic functions that return a list of gadget
--- realizations and a modified list of location pools and maps (the state). Each
--- predicate will likely need a function that will take the variables and return
--- a list or set (most likely set, it looks like it will be easier/faster to
--- randomly pick from sets) instantiated gadgets that would fulfill that
--- predicate.
---
--- The code generation will need to handle several things:
--- 1) If the predicate returns an empty list... I think it is safe to fail in
---    this case with the expectation that a sufficiently large GadgetLibrary is
---    generated.
--- 2) Choosing an appropriate gadget instantiation that does not clobber
---    the set of mapped locations.
--- 3) In the event that there is no gadget that does not clobber the location,
---    pick one gadget that does clobber and rearrange the variable mappings such
---    that no mapped locations are clobbered.
---
--- I think then it is safe to start with just that, though it may be beneficial
--- to investigate randomly choosing between 2 and 3 as only falling back to 2 in
--- the event of failure will bias towards gadgets of a single instruction which
--- will lead to less variety in the resulting code.
---
--- Another possibility would to always use 3 and only use 2 for the rearranging
--- of variable mappings.
-
 type Variable           = Int
 type LocationPool       = [X.Location]
 type VariableMap        = M.Map Variable X.Location
-type CodeGenState       = (D.GadgetLibrary, VariableMap, LocationPool, Maybe [Metadata])
 type PredicateProgram   = State CodeGenState ()
---type Predicate          = CodeGenState -> (Maybe [Metadata], CodeGenState)
 type Predicate          = State CodeGenState ()
+
+data CodeGenState       = CodeGenState {
+        library             :: D.GadgetLibrary
+    ,   variableMap         :: VariableMap
+    ,   locationPool        :: LocationPool
+    ,   generatedCode       :: Maybe [Metadata]
+    ,   currentPredicate    :: Integer
+    ,   predicateToByte     :: M.Map Integer Integer -- ^ Maps from predicate indices to byte indices
+    }
+
+initialState :: CodeGenState
+initialState = CodeGenState {
+        library             = D.emptyLibrary
+    ,   variableMap         = M.empty
+    ,   locationPool        = map X.RegisterLocation [minBound .. maxBound]
+    ,   generatedCode       = Just []
+    ,   currentPredicate    = 1
+    ,   predicateToByte     = M.insert 1 0 M.empty
+    }
 
 --------------------------------------------------------------------------------
 -- Predicates
@@ -85,22 +76,36 @@ add a b c = makePredicate3 add' a b c
         add' (X.RegisterLocation a) (X.RegisterLocation b) (X.RegisterLocation c) = [G.Plus a $ S.fromList [b,c]]
         add' _ _ _ = []
 
+jump :: Integer -> Predicate
+jump offset = if offset <= 0
+    then do
+        state@CodeGenState{..}  <- get
+        let maybeCurrentOffset  = M.lookup (currentPredicate) predicateToByte
+        let maybeJumpOffset     = M.lookup (currentPredicate+offset) predicateToByte
+        case (maybeCurrentOffset, maybeJumpOffset) of
+            (Just currentOffset, Just jumpOffset)   -> makePredicate [G.Jump (jumpOffset - currentOffset)]
+            _                                       -> failure
+    -- | TODO: We need a way of handling jumps into future portions of the
+    -- code, right now it will just die a most painful death
+    else failure
+    where
+        failure :: Predicate
+        failure = do
+            state@CodeGenState{..} <- get
+            put state{generatedCode = Nothing}
+            return ()
+
 generate :: D.GadgetLibrary -> PredicateProgram -> Maybe [Metadata]
-generate library state =
-    let
-        initialState = (library, M.empty, map X.RegisterLocation [minBound .. maxBound], Just [])
-        (_,(_,_,_,meta)) = runState state initialState
-    in
-        meta
+generate library state = generatedCode $ snd $ runState state $ initialState{library=library}
 
 --makeVariables :: Int -> CodeGenState -> ([Variable],CodeGenState)
 makeVariables :: Int -> State CodeGenState [Variable]
 makeVariables n = do
-    (library,vars,pool,code) <- get
-    let varList         = zip [((maximum $ 0 : M.keys vars)+1) .. ] (take n pool)
-    let newPool         = drop n pool
-    let newVars         = vars `M.union` (M.fromList varList)
-    put (library, newVars, newPool, code)
+    state@CodeGenState{..}  <- get
+    let varList             = zip [((maximum $ 0 : M.keys variableMap)+1) .. ] (take n locationPool)
+    let newPool             = drop n locationPool
+    let newVars             = variableMap `M.union` (M.fromList varList)
+    put state{variableMap = newVars, locationPool = newPool}
     return $ map fst varList
 
 --------------------------------------------------------------------------------
@@ -124,20 +129,33 @@ makePredicate3 generator a b c = do
 
 makePredicate :: [G.Gadget] -> Predicate
 makePredicate (g:_) = do
-    state@(library,variables,freeLocations,code) <- get
+    state@(CodeGenState{..}) <- get
     -- Attempt to find a gadget in a Maybe monad
     let result = do
         gadgets         <- M.lookup g library
-        let (meta, _)   = head $ reverse $ filter (doesNotClobber variables) $ S.toList gadgets
-        return meta
-    let newCode = liftM2 (++) code result
-    put (library,variables,freeLocations, newCode)
-    return ()
+        let (meta, _)   = head $ reverse $ filter (doesNotClobber variableMap) $ S.toList gadgets
+        prevIndex       <- M.lookup currentPredicate predicateToByte
+        let codeIndex   = prevIndex + (sum $ map (fromIntegral . mdLength) meta)
+        let newCode     = liftM2 (++) generatedCode $ return meta
+        return (newCode, codeIndex)
+    case result of 
+        Just (newCode, index)   -> do
+                                    put state{
+                                            generatedCode       = newCode
+                                        ,   predicateToByte     = M.insert (currentPredicate+1) index predicateToByte
+                                        ,   currentPredicate    = currentPredicate + 1 
+                                        }
+                                    return ()
+        Nothing                 -> do
+                                    put state{
+                                            generatedCode       = Nothing
+                                        }
+                                    return ()
     where
         doesNotClobber variables (_,clobber) = (S.fromList clobber) `S.intersection` (S.fromList $ M.elems $ variables) == S.empty
 
 varToLoc :: CodeGenState -> Variable -> X.Location
-varToLoc (_,vars,_,_) var = fromJust $ M.lookup var vars
+varToLoc (CodeGenState {..}) var = fromJust $ M.lookup var variableMap
 
 --locToVar :: CodeGenState -> X.Location -> Maybe Variable
 --locToVar (_,vars,_) targetLoc = M.foldWithKey findLoc Nothing vars 

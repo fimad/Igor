@@ -34,7 +34,7 @@ generate :: Model -> IO [Metadata]
 generate model = do
     words <- model
     -- attempt to disassemble them
-    let result = disassembleMetadata (intel32 {cfgSyntax = SyntaxIntel}) $ B.pack words 
+    let result = disassembleMetadata (intel32 {cfgCPUMode = Mode32, cfgSyntax = SyntaxIntel}) $ B.pack words 
     -- if successful return the instruction list, otherwise try again
     case result of
         []        -> generate model

@@ -8,7 +8,7 @@ import              Igor.Gadget.Discovery
 
 main :: IO ()
 main = do
-    library <- discover 1000 $ generate $ uniform 16
+    library <- discover 10000 $ generate $ uniform 16
     sequence_ $ map prettyPrint $ M.toList library
 
     where

@@ -105,18 +105,13 @@ eval' state instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Imov})   = do
     return $ M.insert dstLocation srcValue state
 
 eval' state instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Iadd})   = do
-    dst         <- listToMaybe $ H.inOperands instruction
-    src         <- listToMaybe $ drop 1 $ H.inOperands instruction
-    dstLocation <- operandToLocation dst
-    srcValue    <- operandToExpression src state
-    return $ M.insert dstLocation (Plus (InitialValue dstLocation) srcValue) state
+    buildExpr2 state Plus (H.inOperands instruction)
 
 eval' state instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Isub})   = do
-    dst         <- listToMaybe $ H.inOperands instruction
-    src         <- listToMaybe $ drop 1 $ H.inOperands instruction
-    dstLocation <- operandToLocation dst
-    srcValue    <- operandToExpression src state
-    return $ M.insert dstLocation (Minus (InitialValue dstLocation) srcValue) state
+    buildExpr2 state Minus (H.inOperands instruction)
+
+eval' state instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ishr})   = do
+    buildExpr2 state RightShift (H.inOperands instruction)
 
 eval' state instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ipush})  = do
     src         <- listToMaybe $ H.inOperands instruction
@@ -151,4 +146,17 @@ eval' state instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ijmp})   = do
         _                                           -> Nothing
 
 eval' _ _                                                                   = Nothing
+
+-- | For simple opcodes that have a direct mapping to an expression,
+-- this function will pull out 2 operands, turn then to expressions and
+-- insert the result into the corresponding source location in the
+-- state.
+buildExpr2 ::  State -> (Expression -> Expression -> Expression) -> [H.Operand] -> Maybe State
+buildExpr2 state expr operands = do
+    dst         <- listToMaybe $ operands
+    src         <- listToMaybe $ drop 1 $ operands
+    dstLocation <- operandToLocation dst
+    srcValue    <- operandToExpression src state
+    dstValue    <- operandToExpression dst state
+    return $ M.insert dstLocation (expr dstValue srcValue) state
 

@@ -27,6 +27,7 @@ data Gadget = NoOp
             | StoreMemReg X.Register X.Value X.Register
             | Plus X.Register (S.Set X.Register)
             | Minus X.Register X.Register X.Register
+            | RightShift X.Register Integer
             | Jump Integer
     deriving (Ord, Eq, Show, Read)
 $( derive makeBinary ''Gadget )
@@ -57,6 +58,7 @@ matchGadgets source expression = catMaybes $ map ($ expression) gadgetMatchers
             , matchStoreMemReg
             , matchPlus
             , matchMinus
+            , matchRightShift
             , matchJump
             ]
 
@@ -102,10 +104,26 @@ matchGadgets source expression = catMaybes $ map ($ expression) gadgetMatchers
         matchMinus _ _ =
                 Nothing
 
+        -- | There seems to be a peculiar case of the shr opcode that shr 1
+        -- passes in a 0 value for the constant.
+        matchRightShift
+            srcLoc@(X.RegisterLocation srcReg)
+            (X.RightShift (X.InitialValue (X.RegisterLocation reg)) (X.Constant 0)) =
+                regEquiv srcReg reg >> Just (RightShift reg 1, [srcLoc])
+        matchRightShift
+            srcLoc@(X.RegisterLocation srcReg)
+            (X.RightShift (X.InitialValue (X.RegisterLocation reg)) (X.Constant amount)) =
+                regEquiv srcReg reg >> Just (RightShift reg $ fromIntegral amount, [srcLoc])
+        matchRightShift _ _ =
+                Nothing
+
         matchJump
             srcLoc@(X.RegisterLocation X.EIP)
             (X.Constant offset) =
                 Just (Jump $ fromIntegral offset, [X.RegisterLocation X.EIP])
         matchJump _ _ =
                 Nothing
+
+        regEquiv :: X.Register -> X.Register -> Maybe ()
+        regEquiv r1 r2 = if r1 == r2 then Just () else Nothing
 

@@ -8,11 +8,14 @@ module Igor.Expr
 , Flag (..)
 , Location (..)
 , Expression (..)
+, generalRegisters
+, specialRegisters
 ) where
 
 import              Data.Binary
 import              Data.DeriveTH
 import              Data.Int
+import              Data.List
 import              Data.Word
 
 type Address = Word32
@@ -25,15 +28,26 @@ data Register = EAX
               | EBX
               | ECX
               | EDX
-              | ESP
-              | EBP
               | EDI
               | ESI
+              | ESP
+              | EBP
                 -- | This kind of a lie, the EIP is only adjusted for jumps,
                 -- even though it is actually being adjusted after every
                 -- instruction executes...
               | EIP 
     deriving (Ord, Eq, Show, Read, Enum, Bounded)
+
+-- | General purpose registers that can be used as variables or scratch
+-- space or what ever.
+generalRegisters :: [Register]
+generalRegisters = [EAX .. ESI]
+
+-- | These registers cannot be used as variables or scratch space, and should
+-- not be clobbered by junk code.
+specialRegisters :: [Register]
+specialRegisters = [minBound .. maxBound] \\ generalRegisters
+
 
 -- | Todo: Find out what some flags are?
 data Flag = NoFlag
@@ -51,6 +65,7 @@ data Expression = InitialValue Location
                 | Constant Value
                 | Plus Expression Expression
                 | Minus Expression Expression
+                | RightShift Expression Expression -- ^ Corresponds to a right logical shift
     deriving (Ord, Eq, Show, Read)
 
 $( derive makeBinary ''Register )

@@ -115,8 +115,8 @@ initialState = CodeGenState {
     ,   variableMap         = M.empty
     ,   locationPool        = map X.RegisterLocation X.generalRegisters
     ,   generatedCode       = Just []
-    ,   currentPredicate    = 1
-    ,   predicateToByte     = M.insert 1 0 M.empty
+    ,   currentPredicate    = 0
+    ,   predicateToByte     = M.insert 0 0 M.empty
     }
 
 --------------------------------------------------------------------------------
@@ -195,16 +195,16 @@ makePredicate (g:_) = do
     -- Attempt to find a gadget in a Maybe monad
     let result = do
         gadgets         <- M.lookup g library
-        let (meta, _)   = head $ reverse $ filter (doesNotClobber variableMap) $ S.toList gadgets
+        let (meta, _)   = head $  filter (doesNotClobber variableMap) $ S.toList gadgets
         prevIndex       <- M.lookup currentPredicate predicateToByte
         let codeIndex   = prevIndex + (sum $ map (fromIntegral . mdLength) meta)
         let newCode     = liftM2 (++) generatedCode $ return meta
         return (newCode, codeIndex)
     case result of 
-        Just (newCode, index)   -> do
+        Just (newCode, codeIndex)   -> do
                                     put state{
                                             generatedCode       = newCode
-                                        ,   predicateToByte     = M.insert (currentPredicate+1) index predicateToByte
+                                        ,   predicateToByte     = M.insert (currentPredicate+1) codeIndex predicateToByte
                                         ,   currentPredicate    = currentPredicate + 1 
                                         }
                                     return ()
@@ -214,7 +214,18 @@ makePredicate (g:_) = do
                                         }
                                     return ()
     where
-        doesNotClobber variables (_,clobber) = (S.fromList clobber) `S.intersection` (S.fromList $ M.elems $ variables) == S.empty
+        doesNotClobber variables (_,clobber) = 
+            let
+                clobberSet              = (S.fromList clobber)
+                usedLocations           = (S.fromList $ M.elems $ variables)
+                untouchableLocations    = usedLocations `S.union` (S.fromList $ map X.RegisterLocation X.specialRegisters)
+                clobbersUsedLocations   = clobberSet `S.intersection` untouchableLocations /= S.empty
+                isMemoryLocation a      = case a of
+                    X.MemoryLocation _ _    -> True
+                    _                       -> False
+                clobbersMemoryLocations = any isMemoryLocation clobber 
+            in
+                not clobbersMemoryLocations && not clobbersUsedLocations
 
 varToLoc :: CodeGenState -> Variable -> X.Location
 varToLoc (CodeGenState {..}) var = fromJust $ M.lookup var variableMap

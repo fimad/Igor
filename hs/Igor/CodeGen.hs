@@ -99,8 +99,8 @@ import              System.Random
 type Variable           = Int
 type LocationPool       = [X.Location]
 type VariableMap        = M.Map Variable X.Location
-type PredicateProgram   = State [CodeGenState] ()
-type Predicate          = State [CodeGenState] ()
+type PredicateProgram   = StateT CodeGenState [] ()
+type Predicate          = StateT CodeGenState [] ()
 
 data CodeGenState       = CodeGenState {
         library             :: D.GadgetLibrary
@@ -112,8 +112,8 @@ data CodeGenState       = CodeGenState {
     ,   predicateToByte     :: M.Map Integer Integer -- ^ Maps from predicate indices to byte indices
     }
 
-initialState :: D.GadgetLibrary -> StdGen -> [CodeGenState]
-initialState library gen = [CodeGenState {
+initialState :: D.GadgetLibrary -> StdGen -> CodeGenState
+initialState library gen = CodeGenState {
         library             = library
     ,   randomGenerator     = gen
     ,   variableMap         = M.empty
@@ -121,7 +121,7 @@ initialState library gen = [CodeGenState {
     ,   generatedCode       = Just []
     ,   currentPredicate    = 0
     ,   predicateToByte     = M.insert 0 0 M.empty
-    }]
+    }
 
 --------------------------------------------------------------------------------
 -- Predicates
@@ -148,15 +148,11 @@ jump = calculateJump G.Jump
 calculateJump :: (Integer -> G.Gadget) -> Integer -> Predicate
 calculateJump jumpFlavor offset =
     if offset <= 0
-        then failure 
---            states  <- get
---            join $ do
---            state@CodeGenState{..}  <- states
---            let maybeCurrentOffset  = M.lookup (currentPredicate) predicateToByte
---            let maybeJumpOffset     = M.lookup (currentPredicate+offset) predicateToByte
---            case (maybeCurrentOffset, maybeJumpOffset) of
---                (Just currentOffset, Just jumpOffset)   -> makePredicate [jumpFlavor (jumpOffset - currentOffset)] >> return ()
---                _                                       -> failure
+        then do 
+            state@CodeGenState{..}  <- get
+            currentOffset           <- lift $ maybeToList $ M.lookup (currentPredicate) predicateToByte
+            jumpOffset              <- lift $ maybeToList $ M.lookup (currentPredicate+offset) predicateToByte
+            makePredicate [jumpFlavor (jumpOffset - currentOffset)] >> return ()
         else failure --do
 --            state@CodeGenState{..}  <- get
 --            let jumpGadgets         = M.filterWithKey (\k _ -> iJump k) library
@@ -180,28 +176,24 @@ calculateJump jumpFlavor offset =
     where
 
         failure :: Predicate
-        failure = put [] >> return ()
+        failure = mzero
 
 --------------------------------------------------------------------------------
 -- External API
 --------------------------------------------------------------------------------
 
 generate :: D.GadgetLibrary -> StdGen -> PredicateProgram -> Maybe [Metadata]
-generate library gen program = join $ listToMaybe $ map generatedCode $ snd $ runState program $ initialState library gen
+generate library gen program = (listToMaybe $ runStateT program $ initialState library gen) >>= (generatedCode . snd)
 
---makeVariables :: Int -> CodeGenState -> ([Variable],CodeGenState)
-makeVariables :: Int -> State [CodeGenState] [Variable]
+makeVariables :: Int -> StateT CodeGenState [] [Variable]
 makeVariables n = do
-    states              <- get
-    (newState, vars)    <- do
-        state@CodeGenState{..}  <- states
-        let varList             = zip [((maximum $ 0 : M.keys variableMap)+1) .. ] (take n locationPool)
-        let newPool             = drop n locationPool
-        let newVars             = variableMap `M.union` (M.fromList varList)
-        let newState            = state{variableMap = newVars, locationPool = newPool}
-        return $ (newState, map fst varList)
+    state@CodeGenState{..}  <- get
+    let varList             = zip [((maximum $ 0 : M.keys variableMap)+1) .. ] (take n locationPool)
+    let newPool             = drop n locationPool
+    let newVars             = variableMap `M.union` (M.fromList varList)
+    let newState            = state{variableMap = newVars, locationPool = newPool}
     put newState
-    return vars
+    return $ map fst varList
 
 --------------------------------------------------------------------------------
 -- Predicate Generation
@@ -209,43 +201,35 @@ makeVariables n = do
 
 makePredicate1 :: (X.Location -> [G.Gadget]) -> Variable -> Predicate
 makePredicate1 generator a = do
-    states <- get
-    sequence_ $ do
-        state <- states
-        return $ makePredicate (generator $ varToLoc state a)
+    state <- get
+    makePredicate (generator $ varToLoc state a)
 
 makePredicate2 :: (X.Location -> X.Location -> [G.Gadget]) -> Variable -> Variable -> Predicate
 makePredicate2 generator a b = do
-    states <- get
-    sequence_ $ do
-        state <- states
-        return $ makePredicate ((generator `on` varToLoc state) a b)
+    state <- get
+    makePredicate ((generator `on` varToLoc state) a b)
 
 makePredicate3 :: (X.Location -> X.Location -> X.Location -> [G.Gadget]) -> Variable -> Variable -> Variable -> Predicate
 makePredicate3 generator a b c = do
-    states <- get
-    sequence_ $ do
-        state <- states
-        return $ makePredicate ((generator `on` varToLoc state) a b $ varToLoc state c)
+    state <- get
+    makePredicate ((generator `on` varToLoc state) a b $ varToLoc state c)
 
 makePredicate :: [G.Gadget] -> Predicate
 makePredicate (g:_) = do
-    allStates <- get
-    put $ do
-        state@(CodeGenState{..}) <- allStates
-        gadgets             <- maybeToList $ M.lookup g library
-        let (shuffled,gen)  = sampleState (shuffle $ S.toList gadgets) randomGenerator
-        (meta, _)           <- filter (doesNotClobber variableMap) $ shuffled
-        prevIndex           <- maybeToList $ M.lookup currentPredicate predicateToByte
-        let codeIndex       = prevIndex + (sum $ map (fromIntegral . mdLength) meta)
-        let newCode         = liftM2 (++) generatedCode $ return meta
-        return (newCode, codeIndex, gen)
-        return $ state{
-                generatedCode       = newCode
-            ,   predicateToByte     = M.insert (currentPredicate+1) codeIndex predicateToByte
-            ,   currentPredicate    = currentPredicate + 1 
-            ,   randomGenerator     = gen
-            }
+    state@(CodeGenState{..})    <- get
+    gadgets                     <- lift $ maybeToList $ M.lookup g library
+    let (shuffled,gen)          = sampleState (shuffle $ S.toList gadgets) randomGenerator
+    (meta, _)                   <- lift $ filter (doesNotClobber variableMap) $ shuffled
+    (meta, _)                   <- lift $ filter (doesNotClobber variableMap) $ shuffled
+    prevIndex                   <- lift $ maybeToList $ M.lookup currentPredicate predicateToByte
+    let codeIndex               = prevIndex + (sum $ map (fromIntegral . mdLength) meta)
+    let newCode                 = liftM2 (++) generatedCode $ return meta
+    put state{
+            generatedCode       = newCode
+        ,   predicateToByte     = M.insert (currentPredicate+1) codeIndex predicateToByte
+        ,   currentPredicate    = currentPredicate + 1 
+        ,   randomGenerator     = gen
+        }
    
 -- | Ensures that a gadget realization does not clobber locations that
 -- should not be clobbered.

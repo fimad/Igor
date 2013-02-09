@@ -23,6 +23,5 @@ testProgram = do
     [v1,v2] <- makeVariables 2
     jump 3
     jump 1
-    noop
     jump (-1)
     jump (-3)

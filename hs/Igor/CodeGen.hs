@@ -37,12 +37,7 @@ import              System.Random
 
 -- TODO:
 --
--- 1) Jumps
---      - Unconditional branches need to be handled by the eval
---          - code after an unconditional branch should be treated as garbage
---          and not evaluated
---
--- 0) Predicates mapping to lists of gadgets
+-- 1) Predicates mapping to lists of gadgets
 --      - Currently only the first gadget in the list is considered when
 --      generating the code for gadgets. It seems that both complex constant
 --      creation and ebp variables will require more than a single gadget to

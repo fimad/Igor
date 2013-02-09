@@ -83,40 +83,45 @@ operandToExpression location state      = valueOf (operandToLocation location) s
 -- this function will pull out 2 operands, turn then to expressions and
 -- insert the result into the corresponding source location in the
 -- state.
-buildExpr2 ::  State -> (Expression -> Expression -> Expression) -> [H.Operand] -> Maybe State
+buildExpr2 ::  State -> (Expression -> Expression -> Expression) -> [H.Operand] -> Maybe (State, Bool)
 buildExpr2 state expr operands = do
     dst         <- listToMaybe $ operands
     src         <- listToMaybe $ drop 1 $ operands
     dstLocation <- operandToLocation dst
     srcValue    <- operandToExpression src state
     dstValue    <- operandToExpression dst state
-    return $ M.insert dstLocation (expr dstValue srcValue) state
+    return (M.insert dstLocation (expr dstValue srcValue) state, False)
 
 -- | Evaluates a list of instructions starting with an 'initialState' by
 -- sequentially applying the 'eval' method.
 eval :: [H.Metadata] -> Maybe State
-eval = foldM (\s m -> eval' s (fromIntegral $ H.mdLength m) $ H.mdInst m) initialState
+eval = liftM fst . foldM (\s m -> eval'' s (fromIntegral $ H.mdLength m) $ H.mdInst m) (initialState, False)
+
+-- | A hack to stop the evaluation of instructions after an unconditional jump.
+eval'' :: (State,Bool) -> Int32 -> H.Instruction -> Maybe (State,Bool)
+eval'' (state,True) _ _                 = return (state,True)
+eval'' (state,False) size instruction   = eval' state size instruction
 
 -- | Evaluates a single instruction, if we are unable to emulate the instruction
 -- eval will return `Nothing`, otherwise it will return `Just` the resulting
--- state.
-eval' :: State -> Int32 -> H.Instruction -> Maybe State 
-eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Inop})     = Just state
-eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ipause})   = Just state
+-- state and if the rest of the instructions can be treated as junk.
+eval' :: State -> Int32 -> H.Instruction -> Maybe (State, Bool)
+eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Inop})     = Just (state,False)
+eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ipause})   = Just (state,False)
 
 eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Iinc})     = do
     dst         <- listToMaybe $ H.inOperands instruction
     dstLocation <- operandToLocation dst
     dstExpr     <- operandToExpression dst state
     let dstValue =  Plus (Constant 1) dstExpr
-    return $ M.insert dstLocation dstValue state
+    return $ (M.insert dstLocation dstValue state, False)
 
 eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Imov})     = do
     dst         <- listToMaybe $ H.inOperands instruction
     src         <- listToMaybe $ drop 1 $ H.inOperands instruction
     dstLocation <- operandToLocation dst
     srcValue    <- operandToExpression src state
-    return $ M.insert dstLocation srcValue state
+    return $ (M.insert dstLocation srcValue state, False)
 
 eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Iadd})     = do
     buildExpr2 state Plus (H.inOperands instruction)
@@ -132,22 +137,24 @@ eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ipush})    
     srcLocation <- operandToLocation src
     srcValue    <- operandToExpression src state
     case valueOf (Just $ RegisterLocation ESP) state of
-        Just (InitialValue (RegisterLocation ESP))  -> return
-                                                        $ M.insert (MemoryLocation ESP (-4)) srcValue
+        Just (InitialValue (RegisterLocation ESP))  -> return (
+                                                          M.insert (MemoryLocation ESP (-4)) srcValue
                                                         $ M.insert (RegisterLocation ESP)
                                                             (Minus (InitialValue (RegisterLocation ESP)) (Constant 4))
                                                           state
+                                                        , False)
         _                                           -> Nothing
 
 eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ipop})     = do
     src         <- listToMaybe $ H.inOperands instruction
     srcLocation <- operandToLocation src
     case valueOf (Just $ RegisterLocation ESP) state of
-        Just (InitialValue (RegisterLocation ESP))  -> return
-                                                        $ M.insert srcLocation (InitialValue $ MemoryLocation ESP 0)
+        Just (InitialValue (RegisterLocation ESP))  -> return (
+                                                          M.insert srcLocation (InitialValue $ MemoryLocation ESP 0)
                                                         $ M.insert (RegisterLocation ESP)
                                                             (Plus (InitialValue (RegisterLocation ESP)) (Constant 4))
                                                           state
+                                                        , False)
         _                                           -> Nothing
 
 -- | TODO: As way to get added random instructions, after an unconditional
@@ -156,7 +163,7 @@ eval' state size instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ijmp})  
     src                 <- listToMaybe $ H.inOperands instruction
     (Constant srcValue) <- operandToExpression src state
     case valueOf (Just $ RegisterLocation EIP) state of
-        Just (InitialValue (RegisterLocation EIP))  -> return $ M.insert (RegisterLocation EIP) (Constant $ srcValue + size) state
+        Just (InitialValue (RegisterLocation EIP))  -> return $ (M.insert (RegisterLocation EIP) (Constant $ srcValue + size) state, True)
         _                                           -> Nothing
 
 eval' _ _ _                                                                     = Nothing

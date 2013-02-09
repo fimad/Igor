@@ -7,6 +7,7 @@ module Igor.Gadget
 , Match (..)
 -- * Methods
 , match
+, defines
 ) where
 
 import              Data.Binary
@@ -36,6 +37,17 @@ type ClobberList = [X.Location]
 -- | A match is an instantiated gadget and a list of clobbered locations.
 type Match = (Gadget, ClobberList)
   
+-- | Returns all of the locations (if any) that are defined by this gadget
+defines :: Gadget -> [X.Location]
+defines (LoadReg        r _)    = [X.RegisterLocation r]
+defines (LoadConst      r _)    = [X.RegisterLocation r]
+defines (LoadMemReg     r _ _)  = [X.RegisterLocation r]
+defines (StoreMemReg    r v _)  = [X.MemoryLocation r v]
+defines (Plus           r _)    = [X.RegisterLocation r]
+defines (Minus          r _ _)  = [X.RegisterLocation r]
+defines (RightShift     r _)    = [X.RegisterLocation r]
+defines _                       = []
+
 -- | Takes a 'State' and returns a set of all of the 'Match'es for the gadgets
 -- that correspond to the given execution state.
 match :: State -> [Match]

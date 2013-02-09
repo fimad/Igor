@@ -102,7 +102,7 @@ type VariableMap        = M.Map Variable X.Location
 -- may not always be the case so there are two different types exported so any
 -- internal changes should not cause problems in user code.
 type PredicateProgram   = StateT CodeGenState [] ()
-type Predicate          = StateT CodeGenState [] ()
+type Predicate a        = StateT CodeGenState [] a
 
 -- | A place holder for a jump. In the event that a predicate attempts to jump
 -- ahead to code that has not been generated yet, it will instead drop a
@@ -140,32 +140,32 @@ initialState library gen = CodeGenState {
 -- Predicates
 --------------------------------------------------------------------------------
 
-noop :: Predicate
-noop = makePredicate [G.NoOp]
+noop :: Predicate ()
+noop = makePredicate [[G.NoOp]]
 
-move :: Variable -> Variable -> Predicate
+move :: Variable -> Variable -> Predicate ()
 move a b = makePredicate2 move' a b
     where
-        move' (X.RegisterLocation a) (X.RegisterLocation b) = [G.LoadReg a b]
+        move' (X.RegisterLocation a) (X.RegisterLocation b) = [[G.LoadReg a b]]
         move' _ _ = []
 
-add :: Variable -> Variable -> Variable -> Predicate
+add :: Variable -> Variable -> Variable -> Predicate ()
 add a b c = makePredicate3 add' a b c
     where
-        add' (X.RegisterLocation a) (X.RegisterLocation b) (X.RegisterLocation c) = [G.Plus a $ S.fromList [b,c]]
+        add' (X.RegisterLocation a) (X.RegisterLocation b) (X.RegisterLocation c) = [[G.Plus a $ S.fromList [b,c]]]
         add' _ _ _ = []
 
-jump :: Integer -> Predicate
+jump :: Integer -> Predicate ()
 jump = calculateJump G.Jump
 
-calculateJump :: (Integer -> G.Gadget) -> Integer -> Predicate
+calculateJump :: (Integer -> G.Gadget) -> Integer -> Predicate ()
 calculateJump jumpFlavor offset =
     if offset <= 0
         then do 
             state@CodeGenState{..}  <- get
             byteIndex               <- lift $ maybeToList $ M.lookup (currentPredicate) predicateToByte
             jumpByteIndex           <- lift $ maybeToList $ M.lookup (currentPredicate+offset) predicateToByte
-            makePredicate [jumpFlavor (jumpByteIndex - byteIndex)]
+            makePredicate [[jumpFlavor (jumpByteIndex - byteIndex)]]
         else do
             state@CodeGenState{..}  <- get
             let jumpGadgets         = M.filterWithKey (\k _ -> isJump k) library
@@ -202,14 +202,14 @@ calculateJump jumpFlavor offset =
 
 generate :: D.GadgetLibrary -> StdGen -> PredicateProgram -> Maybe [Metadata]
 generate library gen program = 
-        listToMaybe
-    $   map lefts
-    $   filter (null . rights)
-    $   map (generatedCode . snd)
-    $   runStateT program 
+        listToMaybe -- If there are any solutions return Just the first
+    $   map lefts -- Turn the Either values into Meta lists
+    $   filter (null . rights) -- Remove solutions with hanging jumps
+    $   map (generatedCode . snd) -- Turn solutions into [Either Meta Jump]
+    $   runStateT program -- Create a really long list of solutions
     $   initialState library gen 
 
-makeVariables :: Int -> StateT CodeGenState [] [Variable]
+makeVariables :: Int -> Predicate [Variable]
 makeVariables n = do
     state@CodeGenState{..}  <- get
     let varList             = zip [((maximum $ 0 : M.keys variableMap)+1) .. ] (take n locationPool)
@@ -223,45 +223,50 @@ makeVariables n = do
 -- Predicate Generation
 --------------------------------------------------------------------------------
 
-makePredicate1 :: (X.Location -> [G.Gadget]) -> Variable -> Predicate
+makePredicate1 :: (X.Location -> [[G.Gadget]]) -> Variable -> Predicate ()
 makePredicate1 generator a = do
     state <- get
     makePredicate (generator $ varToLoc state a)
 
-makePredicate2 :: (X.Location -> X.Location -> [G.Gadget]) -> Variable -> Variable -> Predicate
+makePredicate2 :: (X.Location -> X.Location -> [[G.Gadget]]) -> Variable -> Variable -> Predicate ()
 makePredicate2 generator a b = do
     state <- get
     makePredicate ((generator `on` varToLoc state) a b)
 
-makePredicate3 :: (X.Location -> X.Location -> X.Location -> [G.Gadget]) -> Variable -> Variable -> Variable -> Predicate
+makePredicate3 :: (X.Location -> X.Location -> X.Location -> [[G.Gadget]]) -> Variable -> Variable -> Variable -> Predicate ()
 makePredicate3 generator a b c = do
     state <- get
     makePredicate ((generator `on` varToLoc state) a b $ varToLoc state c)
 
-makePredicate :: [G.Gadget] -> Predicate
-makePredicate (g:_) = do
+makePredicate :: [[G.Gadget]] -> Predicate ()
+makePredicate allGadgetStreams = do
     state@(CodeGenState{..})    <- get
-    gadgets                     <- lift $ maybeToList $ M.lookup g library
-    let (shuffled,gen)          = sampleState (shuffle $ S.toList gadgets) randomGenerator
-    -- put the generator in the state so that the jump replacement code can be
-    -- random as well
-    put state{ randomGenerator = gen }
-    (meta, _)                   <- lift $ filter (doesNotClobber variableMap) $ shuffled
+    gadgetStream                <- lift allGadgetStreams -- grab a sequence of gadgets that do what we want
+    metaStream                  <- liftM concat $ mapM translateGadget gadgetStream
     byteIndex                   <- lift $ maybeToList $ M.lookup currentPredicate predicateToByte
-    let nextByteIndex           = byteIndex + (sum $ map (fromIntegral . mdLength) meta)
+    let nextByteIndex           = byteIndex + (sum $ map (fromIntegral . mdLength) metaStream)
     jumpReplacedCode            <- liftM concat $ mapM (replaceJumpHolders currentPredicate byteIndex) generatedCode
-    let newCode                 = jumpReplacedCode ++ (map Left meta)
+    let newCode                 = jumpReplacedCode ++ (map Left metaStream)
     put state{
             generatedCode       = newCode
         ,   predicateToByte     = M.insert (currentPredicate+1) nextByteIndex predicateToByte
         ,   currentPredicate    = currentPredicate + 1 
         }
     where
+        translateGadget :: G.Gadget -> Predicate [Metadata]
+        translateGadget gadget = do
+            state@(CodeGenState{..})    <- get
+            gadgetSet                   <- lift $ maybeToList $ M.lookup gadget library
+            let (shuffled,gen)          = sampleState (shuffle $ S.toList gadgetSet) randomGenerator
+            -- put the generator in the state so that the jump replacement code
+            -- and future gadgets can be random as well
+            put state{ randomGenerator = gen }
+            lift $ map fst $ filter (doesNotClobber variableMap) $ shuffled
         -- | Attempts to replace forward jump statements for a given element in
         -- generatedCode. Because a jumpHolder may be replaced by several
         -- instructions it is necessary to return a list of lists and then
         -- concat the results.
-        replaceJumpHolders :: Integer -> Integer -> (Either Metadata JumpHolder) -> StateT CodeGenState [] ([Either Metadata JumpHolder])
+        replaceJumpHolders :: Integer -> Integer -> (Either Metadata JumpHolder) -> Predicate ([Either Metadata JumpHolder])
         replaceJumpHolders predIndex byteOffset j@(Right (JumpHolder {..}))
             | predIndex == target   = do
                 state@(CodeGenState{..})    <- get

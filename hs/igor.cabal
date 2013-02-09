@@ -14,6 +14,7 @@ Description:
     described in "Frankenstein: Stitching Malware from Benign Binaries".
 
 Library
+    ghc-options: -O2
     Extensions:     RecordWildCards
     Exposed-Modules:
         Igor
@@ -36,4 +37,9 @@ Library
         ,   random-fu   >= 0.2.4
 
 Executable discover-gadgets
+    ghc-options: -O2
     Main-Is: discover-gadgets.hs
+
+Executable igor-test
+    ghc-options: -O2
+    Main-Is: igor-test.hs

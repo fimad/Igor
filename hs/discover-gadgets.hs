@@ -4,6 +4,7 @@ import              Igor.ByteModel
 import              Igor.Gadget.Discovery
 import              System.Directory
 import              System.Environment
+import              System.Random
 
 main :: IO ()
 main = do
@@ -15,11 +16,12 @@ main = do
             existingLibrary <- if fileExists
                                     then do
                                         putStrLn "Reading existing library..."
-                                        decodeFile file
+                                        load file
                                     else
                                         return emptyLibrary
             putStrLn "Looking for gadgets..."
-            newLibrary      <- discover 10000 $ generate $ uniform 16
+            gen             <- newStdGen
+            let newLibrary  = discover gen 50000 $ generate $ uniform 16
             mergedLibrary   <- if existingLibrary /= emptyLibrary
                                     then do
                                         putStrLn "Adding newly discovered gadgets..."
@@ -27,7 +29,8 @@ main = do
                                     else
                                         return newLibrary
             putStrLn "Writing to file..."
-            encodeFile file mergedLibrary
+            --encodeFile file mergedLibrary
+            save file mergedLibrary
             putStrLn "Done!"
         _      ->
             putStrLn $ concat $ ["Usage: ", progName, " gadgetLibraryFile"]

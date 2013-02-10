@@ -8,11 +8,8 @@ module Igor.CodeGen
 , PredicateProgram
 -- * Methods
 , generate
+, makeVariable
 , makeVariables
---, makePredicate
---, makePredicate1
---, makePredicate2
---, makePredicate3
 -- ** Predicates
 , move
 , add
@@ -137,32 +134,6 @@ initialState library gen = CodeGenState {
 -- Predicates
 --------------------------------------------------------------------------------
 
--- | A helper function that will generate a sequence of gadgets that will move
--- one location to another regardless of the type of location.
-moveHelper  :: LocationPool -- ^ Locations that we are allowed to use as scratch
-            -> X.Location   -- ^ The destination location
-            -> X.Location   -- ^ The source location
-            -> [[G.Gadget]]   -- ^ All the possible sequences of gadgets that will fulfill the move
-moveHelper pool (X.RegisterLocation a) (X.RegisterLocation b)       
-    | a == b    = [[]]
-    | otherwise = [[G.LoadReg a b]]
-
-moveHelper pool (X.MemoryLocation r offset) (X.RegisterLocation b)  =
-        [ [G.StoreMemReg r offset b] ]
-    ++  [ [G.LoadReg t b, G.StoreMemReg r offset t] | (X.RegisterLocation t) <- pool ]
-
-moveHelper pool (X.RegisterLocation b) (X.MemoryLocation r offset)  =
-        [ [G.LoadMemReg b r offset] ]
-    ++  [ [G.LoadMemReg t r offset, G.LoadReg b t] | (X.RegisterLocation t) <- pool ]
-
-moveHelper pool a@(X.MemoryLocation aReg aOffset) b@(X.MemoryLocation bReg bOffset) 
-    | a == b    = [[]]
-    | otherwise = [ [G.LoadMemReg t aReg aOffset, G.StoreMemReg bReg bOffset t] | (X.RegisterLocation t) <- pool ]
-
-moveHelper _ a b
-    | a == b    = [[]]
-    | otherwise = []
-
 noop :: Predicate ()
 noop = makePredicate [[G.NoOp]]
 
@@ -178,10 +149,10 @@ add a b c = do
     where
         add' pool a b c = 
             [ 
-                    moveU -- Move u to a temporary register
-                ++  moveV -- Move v to a temporary register
+                    moveX -- Move u to a temporary register
+                ++  moveY -- Move v to a temporary register
                 ++  [G.Plus xReg $ S.fromList [xReg,yReg]] -- We are more likely to find an add involving 2 registers
-                ++   moveA -- Move the result into a
+                ++  moveA -- Move the result into a
             | 
                     -- Try swapping b and c also. This is useful if one of the
                     -- locations is a register and the other is not, it allows
@@ -193,18 +164,22 @@ add a b c = do
                     -- Because a is going to be overwritten with the result, we
                     -- can consider it in the location pool and use it as
                     -- scratch space for the computation. 
-                ,   xLoc@(X.RegisterLocation xReg) <- a:pool
+                ,   xLoc@(X.RegisterLocation xReg) <- a:x:pool
                     -- Because we aren't possibly overwriting v we can use v if
                     -- it is a register, otherwise choose a temp register for it
-                ,   yLoc@(X.RegisterLocation yReg) <- y:(pool \\ [xLoc])
+                ,   yLoc@(X.RegisterLocation yReg) <- (y:pool) \\ [xLoc]
                     -- Shuffle locations around into temporary registers
-                ,   moveU <- moveHelper pool xLoc x -- Move b into x
-                ,   moveV <- moveHelper pool yLoc y -- Move c into y
+                ,   moveX <- moveHelper pool xLoc x -- Move b into x
+                ,   moveY <- moveHelper pool yLoc y -- Move c into y
                 ,   moveA <- moveHelper pool a xLoc -- Move the result into a
             ]
 
 jump :: Integer -> Predicate ()
 jump = calculateJump G.Jump
+
+--------------------------------------------------------------------------------
+-- Predicate Helper Functions
+--------------------------------------------------------------------------------
 
 -- | Common jump calculation code. It takes a jump constructor a predicate
 -- offset and returns a predicate that fulfills the jump. Backward jumps are
@@ -249,6 +224,62 @@ calculateJump jumpFlavor offset =
         isJump (G.Jump _)   = True
         isJump _            = False
 
+-- | A helper function that will generate a sequence of gadgets that will move
+-- one location to another regardless of the type of location.
+moveHelper  :: LocationPool -- ^ Locations that we are allowed to use as scratch
+            -> X.Location   -- ^ The destination location
+            -> X.Location   -- ^ The source location
+            -> [[G.Gadget]]   -- ^ All the possible sequences of gadgets that will fulfill the move
+moveHelper pool (X.RegisterLocation a) (X.RegisterLocation b)       
+    | a == b    = [[]]
+    | otherwise = [[G.LoadReg a b]]
+
+moveHelper pool (X.MemoryLocation a offset) bLoc@(X.RegisterLocation b)  =
+        [ [G.StoreMemReg a offset b] ]
+    ++  [
+            [
+                G.LoadReg taReg a
+            ,   G.LoadReg tbReg b
+            ,   G.StoreMemReg taReg offset tbReg
+            ]
+        |
+                taLoc@(X.RegisterLocation taReg) <- (X.RegisterLocation a):pool
+            ,   tbLoc@(X.RegisterLocation tbReg) <- ((bLoc:pool) \\ [taLoc])
+        ]
+
+moveHelper pool aLoc@(X.RegisterLocation a) (X.MemoryLocation b offset)  =
+        [ [G.LoadMemReg a b offset] ]
+    ++  [
+            [
+                G.LoadReg tb b
+            ,   G.LoadMemReg ta tb offset
+            ,   G.LoadReg a ta
+            ]
+        |
+                (X.RegisterLocation ta) <- aLoc:pool
+            ,   (X.RegisterLocation tb) <- pool
+        ]
+
+moveHelper pool a@(X.MemoryLocation aReg aOffset) b@(X.MemoryLocation bReg bOffset) 
+    | a == b    = [[]]
+    | otherwise = 
+        [
+            [
+                G.LoadReg taReg aReg
+            ,   G.LoadMemReg tReg taReg aOffset
+            ,   G.LoadReg tbReg bReg
+            ,   G.StoreMemReg tbReg bOffset tReg
+            ] 
+        | 
+                taLoc@(X.RegisterLocation taReg) <- (X.RegisterLocation aReg):pool
+            ,   tbLoc@(X.RegisterLocation tbReg) <- (X.RegisterLocation bReg):pool
+            ,   tLoc@(X.RegisterLocation tReg)   <- (pool \\ [tbLoc])
+        ]
+
+moveHelper _ a b
+    | a == b    = [[]]
+    | otherwise = []
+
 --------------------------------------------------------------------------------
 -- External API
 --------------------------------------------------------------------------------
@@ -262,18 +293,42 @@ generate library gen program =
     $   runStateT program -- Create a really long list of solutions
     $   initialState library gen 
 
+-- | Create a variable for use with the predicate functions.
+makeVariable :: Predicate Variable
+makeVariable = do
+    state@CodeGenState{..}      <- get
+    -- Find the next available offset from EBP to use as the local stack
+    -- variable
+    let (readable,writeable)    = M.foldrWithKey' findValidOffsets ([],[]) library
+    let validOffsets            = map fromIntegral $ reverse $ sort $ readable `intersect` writeable
+    stackOffset                 <- lift $ take 1 $ filter (<=localVariableOffset - 4) validOffsets
+    let stackVariable           = X.MemoryLocation X.EBP $ fromIntegral stackOffset
+    -- Allocate an integer id for the new variable
+    let variableId              = (maximum $ 0 : M.keys variableMap) + 1
+    --variableLocation            <- lift $ (take 1 locationPool)++[stackVariable]++(drop 1 locationPool)
+--    variableLocation            <- lift $ locationPool++[stackVariable]
+    variableLocation            <- lift $ [stackVariable]
+    put state {
+            variableMap         = M.insert variableId variableLocation variableMap
+        ,   locationPool        = locationPool \\ [variableLocation]
+        ,   localVariableOffset = stackOffset
+        }
+    return variableId
+    where
+        -- | Places a Memory location offset into one a readable or writeable
+        -- list. If folded over a list of gadgets, it will produces a tuple of
+        -- two lists that contain all of the offsets that are readable and
+        -- writeable respectively.
+        findValidOffsets (G.LoadMemReg _ _ offset)  _ (readable,writeable)  = (offset:readable,writeable)
+        findValidOffsets (G.StoreMemReg _ offset _) _ (readable,writeable)  = (readable,offset:writeable)
+        findValidOffsets _                          _ lists                 = lists
+
+-- | Create n variables for use with the predicate functions.
 makeVariables :: Int -> Predicate [Variable]
-makeVariables n = do
-    state@CodeGenState{..}  <- get
-    let varList             = zip [((maximum $ 0 : M.keys variableMap)+1) .. ] (take n locationPool)
-    let newPool             = drop n locationPool
-    let newVars             = variableMap `M.union` (M.fromList varList)
-    let newState            = state{variableMap = newVars, locationPool = newPool}
-    put newState
-    return $ map fst varList
+makeVariables n = sequence $ replicate n makeVariable
 
 --------------------------------------------------------------------------------
--- Predicate Generation
+-- Predicate to Gadget translation
 --------------------------------------------------------------------------------
 
 makePredicate1 :: (X.Location -> [[G.Gadget]]) -> Variable -> Predicate ()
@@ -318,7 +373,7 @@ makePredicate allGadgetStreams = do
         translateGadget :: G.Gadget -> Predicate [Metadata]
         translateGadget gadget = do
             state@(CodeGenState{..})    <- get
-            gadgetSet                   <- lift $ maybeToList $ M.lookup gadget library
+            gadgetSet                   <- lift $ maybeToList $ D.libraryLookup gadget library
             let (shuffled,gen)          = sampleState (shuffle $ S.toList gadgetSet) randomGenerator
             -- put the generator in the state so that the jump replacement code
             -- and future gadgets can be random as well
@@ -340,7 +395,7 @@ makePredicate allGadgetStreams = do
                 let gadgets                 = filter ((length==) . sum . map (fromIntegral . mdLength) . fst)
                                                 $ concatMap S.toList
                                                 $ maybeToList
-                                                $ M.lookup (jumpFlavor (byteOffset-jumpOffset)) library
+                                                $ D.libraryLookup (jumpFlavor (byteOffset-jumpOffset)) library
                 let (shuffled,gen)          = sampleState (shuffle gadgets) randomGenerator
                 (meta, _)                   <- lift $ filter (doesNotClobber variableMap) $ shuffled
                 put state{ randomGenerator = gen }
@@ -351,7 +406,8 @@ makePredicate allGadgetStreams = do
    
 -- | Ensures that a gadget realization does not clobber locations that
 -- should not be clobbered.
-doesNotClobber variables (_,clobber) = 
+doesNotClobber variables (_,[])         = True
+doesNotClobber variables (_,clobber)    = 
     let
         clobberSet              = (S.fromList clobber)
         usedLocations           = (S.fromList $ M.elems $ variables)

@@ -118,6 +118,7 @@ data CodeGenState       = CodeGenState {
     ,   generatedCode       :: [Either Metadata JumpHolder]
     ,   currentPredicate    :: Integer
     ,   predicateToByte     :: M.Map Integer Integer -- ^ Maps from predicate indices to byte indices
+    ,   localVariableOffset :: Integer -- ^ How far from EBP should we assign the next local variable?
     }
 
 initialState :: D.GadgetLibrary -> StdGen -> CodeGenState
@@ -129,26 +130,78 @@ initialState library gen = CodeGenState {
     ,   generatedCode       = []
     ,   currentPredicate    = 0
     ,   predicateToByte     = M.insert 0 0 M.empty
+    ,   localVariableOffset = 0
     }
 
 --------------------------------------------------------------------------------
 -- Predicates
 --------------------------------------------------------------------------------
 
+-- | A helper function that will generate a sequence of gadgets that will move
+-- one location to another regardless of the type of location.
+moveHelper  :: LocationPool -- ^ Locations that we are allowed to use as scratch
+            -> X.Location   -- ^ The destination location
+            -> X.Location   -- ^ The source location
+            -> [[G.Gadget]]   -- ^ All the possible sequences of gadgets that will fulfill the move
+moveHelper pool (X.RegisterLocation a) (X.RegisterLocation b)       
+    | a == b    = [[]]
+    | otherwise = [[G.LoadReg a b]]
+
+moveHelper pool (X.MemoryLocation r offset) (X.RegisterLocation b)  =
+        [ [G.StoreMemReg r offset b] ]
+    ++  [ [G.LoadReg t b, G.StoreMemReg r offset t] | (X.RegisterLocation t) <- pool ]
+
+moveHelper pool (X.RegisterLocation b) (X.MemoryLocation r offset)  =
+        [ [G.LoadMemReg b r offset] ]
+    ++  [ [G.LoadMemReg t r offset, G.LoadReg b t] | (X.RegisterLocation t) <- pool ]
+
+moveHelper pool a@(X.MemoryLocation aReg aOffset) b@(X.MemoryLocation bReg bOffset) 
+    | a == b    = [[]]
+    | otherwise = [ [G.LoadMemReg t aReg aOffset, G.StoreMemReg bReg bOffset t] | (X.RegisterLocation t) <- pool ]
+
+moveHelper _ a b
+    | a == b    = [[]]
+    | otherwise = []
+
 noop :: Predicate ()
 noop = makePredicate [[G.NoOp]]
 
 move :: Variable -> Variable -> Predicate ()
-move a b = makePredicate2 move' a b
-    where
-        move' (X.RegisterLocation a) (X.RegisterLocation b) = [[G.LoadReg a b]]
-        move' _ _ = []
+move a b = do
+    CodeGenState{..} <- get
+    makePredicate2 (moveHelper locationPool) a b
 
 add :: Variable -> Variable -> Variable -> Predicate ()
-add a b c = makePredicate3 add' a b c
+add a b c = do
+    CodeGenState{..} <- get
+    makePredicate3 (add' locationPool) a b c
     where
-        add' (X.RegisterLocation a) (X.RegisterLocation b) (X.RegisterLocation c) = [[G.Plus a $ S.fromList [b,c]]]
-        add' _ _ _ = []
+        add' pool a b c = 
+            [ 
+                    moveU -- Move u to a temporary register
+                ++  moveV -- Move v to a temporary register
+                ++  [G.Plus xReg $ S.fromList [xReg,yReg]] -- We are more likely to find an add involving 2 registers
+                ++   moveA -- Move the result into a
+            | 
+                    -- Try swapping b and c also. This is useful if one of the
+                    -- locations is a register and the other is not, it allows
+                    -- the search to find solutions that move the non-register
+                    -- location into the destination (if it is a register) and
+                    -- keep the register location in the same. Basically it
+                    -- makes the below search symmetric.
+                    (x,y) <- [(b,c), (c,b)]
+                    -- Because a is going to be overwritten with the result, we
+                    -- can consider it in the location pool and use it as
+                    -- scratch space for the computation. 
+                ,   xLoc@(X.RegisterLocation xReg) <- a:pool
+                    -- Because we aren't possibly overwriting v we can use v if
+                    -- it is a register, otherwise choose a temp register for it
+                ,   yLoc@(X.RegisterLocation yReg) <- y:(pool \\ [xLoc])
+                    -- Shuffle locations around into temporary registers
+                ,   moveU <- moveHelper pool xLoc x -- Move b into x
+                ,   moveV <- moveHelper pool yLoc y -- Move c into y
+                ,   moveA <- moveHelper pool a xLoc -- Move the result into a
+            ]
 
 jump :: Integer -> Predicate ()
 jump = calculateJump G.Jump

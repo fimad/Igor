@@ -61,10 +61,7 @@ gprToRegister _     = Nothing
 
 -- | Convert an operand into a location
 operandToLocation :: H.Operand -> Maybe Location
--- TODO: A design decision has been made to only allow relative addressing from
--- the ebp register, this will simplify the side affects of clobbering indirect
--- memory locations addressed against other registers.
-operandToLocation (H.Mem (H.Memory _ (H.Reg32 base@H.RBP) (H.RegNone) _ (H.Immediate _ off))) =
+operandToLocation (H.Mem (H.Memory _ (H.Reg32 base) (H.RegNone) _ (H.Immediate _ off))) =
     (gprToRegister base) >>= return . (flip MemoryLocation) (fromIntegral off)
 --operandToLocation (H.Mem (H.Memory _ (H.RegNone) (H.Reg32 base@H.RBP) 1 (H.Immediate _ off))) =
 --    (gprToRegister base) >>= return . (flip MemoryLocation) (fromIntegral off)

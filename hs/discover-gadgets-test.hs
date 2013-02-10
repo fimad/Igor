@@ -8,7 +8,7 @@ import              Igor.Gadget.Discovery
 
 main :: IO ()
 main = do
-    library <- discover 1000 $ generate $ uniform 16
+    library <- discover 10000 $ generate $ uniform 16
     sequence_ $ map prettyPrint $ M.toList library
 
     where
@@ -18,5 +18,6 @@ main = do
 
         prettyPrint' (meta, clobbered) = do
             putStr $ unlines . map (("\t"++) . mdAssembly) $ meta
+            putStr $ unlines . map (("\t"++) . mdHex) $ meta
             putStrLn $ "\tClobbered: " ++ show clobbered
             putStrLn $ "\t" ++ replicate 40 '-' ++ "\n"

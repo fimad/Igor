@@ -1,5 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE BangPatterns #-}
 module Igor.Gadget.Discovery
 ( 
 -- * Types
@@ -105,7 +106,7 @@ libraryMerge :: GadgetLibrary -> GadgetLibrary -> GadgetLibrary
 libraryMerge a b = GadgetLibrary $ M.unionWith S.union (gadgetMap a) (gadgetMap b)
 
 libraryInsert :: G.Gadget -> ([Metadata], G.ClobberList) -> GadgetLibrary -> GadgetLibrary
-libraryInsert gadget value library = GadgetLibrary $ M.insert gadget (S.singleton value) $ gadgetMap library
+libraryInsert gadget value library = GadgetLibrary $! M.insertWith S.union gadget (S.singleton value) $ gadgetMap library
 
 -- | Given a target size and an instruction 'Metadata' 'Generator', builds a
 -- library of gadgets of that is at least as large as the target size.
@@ -113,7 +114,7 @@ discover :: Int -> Generator -> StdGen -> GadgetLibrary
 discover targetSize generator gen = discoverMore targetSize generator gen emptyLibrary
 
 discoverMore :: Int -> Generator -> StdGen -> GadgetLibrary -> GadgetLibrary
-discoverMore targetIncrease generator gen library =  fst $ sampleState (discover' library) gen
+discoverMore targetIncrease !generator gen library =  fst $ sampleState (discover' library) gen
     where
         targetSize = M.size (gadgetMap library) + targetIncrease
 
@@ -123,7 +124,7 @@ discoverMore targetIncrease generator gen library =  fst $ sampleState (discover
                 then do
                     return library
                 else do
-                    stream          <- generator >>= return . inits
+                    !stream          <- generator >>= return . inits
                     --stream          <- generator >>= return . subsequences
                     let newLibrary  = foldr' (uncurry libraryInsert) library $!! concatMap process stream
                     newLibrary `seq` discover' newLibrary

@@ -16,6 +16,7 @@ module Igor.Gadget.Discovery
 ) where
 
 import              Codec.Compression.Zlib
+import              Control.DeepSeq
 import              Control.Monad
 import qualified    Data.ByteString         as B
 import              Data.ByteString.Lazy.Internal (ByteString)
@@ -30,6 +31,7 @@ import qualified    Data.Set                as S
 import              Data.Maybe
 import              Data.Random
 import              Data.Random.RVar
+import              Data.Tuple
 import              Igor.Binary
 import              Igor.ByteModel
 import              Igor.Eval
@@ -39,38 +41,56 @@ import              System.Mem
 import              System.Random
 
 -- | A collection of sequences of bytecodes that correspond to specific gadgets.
-data GadgetLibrary = GadgetLibrary {
-        gadgetMap   :: M.Map G.Gadget (S.Set ([Int], G.ClobberList))
-        -- | The reason for the indirection here is that, while discovering
-        -- gadgets, if multiple gadgets use the same meta data they share the
-        -- instance in memory. The binary library does not preserve this quality
-        -- during serialization and it leads to an explosion in the amount of
-        -- memory required to keep the library in memory.
-    ,   intToMeta   :: M.Map Int Metadata
-    ,   metaToInt   :: M.Map Metadata Int
-    ,   maxIndex    :: Int
+newtype GadgetLibrary = GadgetLibrary {
+        gadgetMap   :: M.Map G.Gadget (S.Set ([Metadata], G.ClobberList))
     }
     deriving (Eq,Ord,Show,Read)
-$( derive makeBinary ''GadgetLibrary )
+$( derive makeNFData ''GadgetLibrary )
+
+instance Binary GadgetLibrary where
+    put library@GadgetLibrary{..} = do
+        let metadataSet     =   S.toList
+                            $   S.unions 
+                            $   S.toList 
+                            $   S.map S.fromList 
+                            $   S.unions 
+                            $   map (S.map $ fst) 
+                            $   M.elems gadgetMap
+        let metadataToInt   = metadataSet `deepseq` M.fromList $ zip metadataSet [1::Int ..] 
+        let intToMetadata   = metadataToInt `deepseq` M.fromList $ map swap $ M.assocs metadataToInt
+        let libraryWithInts = intToMetadata `deepseq` M.map (S.map (\(m,c) -> (map (metadataToInt M.!) m,c))) gadgetMap
+        put $!! intToMetadata
+        put $!! libraryWithInts
+
+    get = do
+        intToMetadata   <- get :: Get (M.Map Int Metadata)
+        libraryWithInts <- intToMetadata `deepseq` get
+        let library     = libraryWithInts `deepseq` M.map (S.map (\(m,c) -> (map (intToMetadata M.!) m,c))) libraryWithInts
+        return $ GadgetLibrary $!! library :: Get GadgetLibrary
+
+--------------------------------------------------------------------------------
+-- GadgetLibrary operations
+--------------------------------------------------------------------------------
 
 save :: String -> GadgetLibrary -> IO ()
 --save file library = B.writeFile file . B.concat . LB.toChunks . compress . encode $ library
-save file library = LB.writeFile file . compress . encode $! library
+--save file library = LB.writeFile file . compress . encode $! library
 --save file library = B.writeFile file . B.concat . LB.toChunks . encode $! library
+--
+--save file library = LB.writeFile file . encode $! library
+save file library = B.writeFile file . B.concat . LB.toChunks . encode $!! library
 
 load :: String -> IO GadgetLibrary
 load file = do
---    library <- return . decode . decompress . LB.fromChunks . return  =<< B.readFile file
-    byteString <- return . decompress . LB.fromChunks . return  =<< B.readFile file
-    let library = LB.length byteString `seq` decode byteString
-    return $! library
+    library <- return . decode . LB.fromChunks . return =<< B.readFile file
+    library `deepseq` performGC
+--    byteString <- return . decompress =<< LB.readFile file
+--    let library = decode byteString
+    return $!! library
 
 emptyLibrary :: GadgetLibrary
 emptyLibrary = GadgetLibrary {
         gadgetMap   = M.empty
-    ,   metaToInt   = M.empty
-    ,   intToMeta   = M.empty
-    ,   maxIndex    = 0
     }
 
 -- | Wraps the look up function, and handles certain cases that may not be in
@@ -78,50 +98,14 @@ emptyLibrary = GadgetLibrary {
 libraryLookup :: G.Gadget -> GadgetLibrary -> Maybe (S.Set ([Metadata], G.ClobberList))
 libraryLookup g@(G.LoadReg a b) library@GadgetLibrary{..}
     | a == b            = return $ S.singleton ([],[])
-    | otherwise         = return . S.map (\(m,c) -> (map (intToMeta M.!) m, c)) =<< M.lookup g gadgetMap
-libraryLookup g library@GadgetLibrary{..}   =
-    return . S.map (\(m,c) -> (map (intToMeta M.!) m, c)) =<< M.lookup g gadgetMap
+    | otherwise         = M.lookup g gadgetMap
+libraryLookup g library@GadgetLibrary{..}   = M.lookup g gadgetMap
 
 libraryMerge :: GadgetLibrary -> GadgetLibrary -> GadgetLibrary
-libraryMerge a b 
-    | M.size (gadgetMap a) > M.size (gadgetMap b)   = a `libraryMerge'` b
-    | otherwise                                     = b `libraryMerge'` a
-    where
-        libraryMerge' big small@GadgetLibrary{..} = foldr' (uncurry libraryInsert) big allSmallValues
-            where
-                allSmallGadgets = (M.keys gadgetMap)
-                allSmallValues  = 
-                        S.toList 
-                    $   S.unions 
-                    $   zipWith (\g v -> S.map (\v -> (g,v)) v) allSmallGadgets
-                    $   map (fromJust . flip libraryLookup small) allSmallGadgets
+libraryMerge a b = GadgetLibrary $ M.unionWith S.union (gadgetMap a) (gadgetMap b)
 
 libraryInsert :: G.Gadget -> ([Metadata], G.ClobberList) -> GadgetLibrary -> GadgetLibrary
-libraryInsert gadget (metaList,clobberList) library@GadgetLibrary{..} =
-    let
-        (newMetaToInt,newIntToMeta,newMaxIndex,newMetaList)
-            = foldr' intForMeta (metaToInt,intToMeta,maxIndex,[]) metaList
-    in
-        library {
-                gadgetMap   = M.insertWith S.union gadget (S.singleton (newMetaList,clobberList)) gadgetMap
-            ,   metaToInt   = newMetaToInt
-            ,   intToMeta   = newIntToMeta
-            ,   maxIndex    = newMaxIndex
-            }
-    where
-        intForMeta metadata (metaToInt,intToMeta,maxIndex,metaList)
-            | M.member metadata metaToInt   =
-                    (   metaToInt
-                    ,   intToMeta
-                    ,   maxIndex
-                    ,   (metaToInt M.! metadata):metaList
-                    )
-            | otherwise                     =  
-                   (    M.insert metadata (maxIndex+1) metaToInt
-                   ,    M.insert (maxIndex+1) metadata intToMeta
-                   ,    maxIndex+1
-                   ,    (maxIndex+1):metaList
-                   )
+libraryInsert gadget value library = GadgetLibrary $ M.insert gadget (S.singleton value) $ gadgetMap library
 
 -- | Given a target size and an instruction 'Metadata' 'Generator', builds a
 -- library of gadgets of that is at least as large as the target size.
@@ -139,9 +123,9 @@ discoverMore targetIncrease generator gen library =  fst $ sampleState (discover
                 then do
                     return library
                 else do
-                    --stream          <- generator >>= return . inits
-                    stream          <- generator >>= return . subsequences
-                    let newLibrary  = foldr' (uncurry libraryInsert) library $ concatMap process stream
+                    stream          <- generator >>= return . inits
+                    --stream          <- generator >>= return . subsequences
+                    let newLibrary  = foldr' (uncurry libraryInsert) library $!! concatMap process stream
                     newLibrary `seq` discover' newLibrary
                     --discover' newLibrary
 

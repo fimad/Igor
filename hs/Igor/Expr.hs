@@ -12,6 +12,7 @@ module Igor.Expr
 , specialRegisters
 ) where
 
+import              Control.DeepSeq
 import              Data.Binary
 import              Data.DeriveTH
 import              Data.Int
@@ -72,3 +73,8 @@ $( derive makeBinary ''Register )
 $( derive makeBinary ''Flag )
 $( derive makeBinary ''Location )
 $( derive makeBinary ''Expression )
+
+$( derive makeNFData ''Register )
+$( derive makeNFData ''Flag )
+$( derive makeNFData ''Location )
+$( derive makeNFData ''Expression )

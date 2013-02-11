@@ -22,9 +22,7 @@ main = do
 
 testProgram :: PredicateProgram
 testProgram = do
-    [v1,v2] <- makeVariables 2
---    jump 4
---    jump 2
+    [v1,v2,v3] <- makeVariables 3
     move v1 v2
---    jump (-2)
---    jump (-4)
+    move v2 v3
+    move v3 v1

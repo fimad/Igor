@@ -10,6 +10,7 @@ module Igor.Gadget
 , defines
 ) where
 
+import              Control.DeepSeq
 import              Data.Binary
 import              Data.DeriveTH
 import qualified    Data.Set    as S
@@ -32,6 +33,7 @@ data Gadget = NoOp
             | Jump Integer
     deriving (Ord, Eq, Show, Read)
 $( derive makeBinary ''Gadget )
+$( derive makeNFData ''Gadget )
 
 type ClobberList = [X.Location]
 -- | A match is an instantiated gadget and a list of clobbered locations.

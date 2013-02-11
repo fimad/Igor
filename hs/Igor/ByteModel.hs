@@ -8,6 +8,7 @@ module Igor.ByteModel
 , generate
 ) where
 
+import              Control.DeepSeq
 import              Codec.Compression.GZip
 import qualified    Data.ByteString                     as B
 import              Data.Random.Distribution
@@ -16,6 +17,7 @@ import              Data.Random.RVar
 import              Data.Word
 import              Hdis86
 import              Hdis86.Types
+import              Igor.Binary
 
 -- | A model randomly generates a finite list of bytes according to a given byte
 -- distribution.
@@ -28,8 +30,9 @@ type Generator = RVar [Metadata]
 -- TODO: Implement an actual model...
 uniform :: Int -> Model
 uniform numBytes = do
-    let model = U.stdUniform
-    sequence $ replicate numBytes model
+    let model   = U.stdUniform
+    result      <- sequence $ replicate numBytes model
+    return $!! result
 
 -- | Generates a random instruction stream based on the model function that is
 -- passed in.
@@ -41,5 +44,5 @@ generate model = do
     -- if successful return the instruction list, otherwise try again
     case result of
         []        -> generate model
-        otherwise -> return result
+        otherwise -> return $!! result
 

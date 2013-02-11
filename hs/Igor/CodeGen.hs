@@ -303,8 +303,8 @@ makeVariable = do
     -- Allocate an integer id for the new variable
     let variableId              = (maximum $ 0 : M.keys variableMap) + 1
     --variableLocation            <- lift $ (take 1 locationPool)++[stackVariable]++(drop 1 locationPool)
---    variableLocation            <- lift $ locationPool++[stackVariable]
-    variableLocation            <- lift $ [stackVariable]
+    variableLocation            <- lift $ locationPool++[stackVariable]
+--    variableLocation            <- lift $ [stackVariable]
     put $! state {
             variableMap         = M.insert variableId variableLocation variableMap
         ,   locationPool        = locationPool \\ [variableLocation]

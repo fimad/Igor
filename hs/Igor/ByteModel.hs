@@ -16,26 +16,30 @@ import qualified    Data.Foldable                       as F
 import              Data.Random.Distribution
 import qualified    Data.Random.Distribution.Uniform    as U
 import              Data.Random.RVar
+import              Data.Random.Sample
+import              Data.Random hiding (uniform)
 import              Data.Word
 import              Hdis86
 import              Hdis86.Incremental
 import              Hdis86.Types
 import              Igor.Binary
+import              System.Random
 
 -- | A model randomly generates a finite list of bytes according to a given byte
 -- distribution.
-type Model     = RVar B.ByteString
+type Model     = IO B.ByteString
 
 -- | A generator will generate a list of instruction 'Metadata'.
-type Generator = RVar [Metadata]
+type Generator = IO [Metadata]
 
 -- | Generates a random list of bytes from the uniform distribution.
 -- TODO: Implement an actual model...
 uniform :: Int -> Model
 uniform numBytes = do
-    let model   = U.stdUniform
-    result      <- sequence $ replicate numBytes model
-    return $! B.pack result
+    let model       = U.stdUniform
+    gen             <- newStdGen
+    let (result,_)  = sampleState (sequence $ replicate numBytes model) gen
+    return $! B.pack (result :: [Word8])
 
 disassembleMetadata' config bytestring = reverse $! disas bytestring []
     where

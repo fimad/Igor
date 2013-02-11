@@ -20,10 +20,9 @@ main = do
                                     else
                                         return emptyLibrary
             putStrLn "Looking for gadgets..."
-            gen             <- newStdGen
             let generator   = generate $ uniform 16
 --            let newLibrary  = foldr1 merge $ map ($ generator) $ replicate 10 $ discover gen 10000
-            let newLibrary  = discoverMore 10000 generator gen existingLibrary
+            newLibrary      <- discoverMore 10000 generator existingLibrary
             putStrLn "Working..."
             save file newLibrary
             putStrLn "Done!"

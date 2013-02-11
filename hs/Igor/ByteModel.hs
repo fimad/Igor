@@ -12,11 +12,13 @@ module Igor.ByteModel
 import              Control.DeepSeq
 import              Codec.Compression.GZip
 import qualified    Data.ByteString                     as B
+import qualified    Data.Foldable                       as F
 import              Data.Random.Distribution
 import qualified    Data.Random.Distribution.Uniform    as U
 import              Data.Random.RVar
 import              Data.Word
 import              Hdis86
+import              Hdis86.Incremental
 import              Hdis86.Types
 import              Igor.Binary
 
@@ -34,6 +36,13 @@ uniform numBytes = do
     let model   = U.stdUniform
     result      <- sequence $ replicate numBytes model
     return $! B.pack result
+
+disassembleMetadata' config bytestring = reverse $! disas bytestring []
+    where
+        disas bs !meta = 
+            case disassembleOne config bs of
+                Nothing                 -> meta
+                Just (newMeta,newBs)    -> newMeta `seq` disas newBs (newMeta:meta)
 
 -- | Generates a random instruction stream based on the model function that is
 -- passed in.

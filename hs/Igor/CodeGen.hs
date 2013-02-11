@@ -20,14 +20,14 @@ module Igor.CodeGen
 import              Control.Monad.State
 import              Data.Either
 import              Data.Function
-import              Data.Foldable (foldr')
+import              Data.Foldable (foldr', foldrM)
 import              Data.List
 import qualified    Data.Map                as M
 import              Data.Maybe
 import qualified    Data.Set                as S
 import              Data.Random
 import              Data.Random.List
---import              Data.Random.Sample
+import              Data.Random.Sample
 import qualified    Igor.Expr               as X
 import qualified    Igor.Gadget             as G
 import qualified    Igor.Gadget.Discovery   as D
@@ -48,23 +48,7 @@ import              System.Random
 --      - This will also likely cause clobber conflicts with variables in the
 --      registers so will likely depend on moving variables to memory.
 --
--- 2) Variable shuffling
---      - It just occurred to me that shuffling the locations of variables in
---      programs that jump around in the code may have inconsistent variable
---      mappings and clobberings. A solution to this would be to only store
---      variables as EBP offsets. The difficulty with this is that there will
---      likely only be a couple registers that read and write to that location
---      so there will likely be many layers of indirection before a gadget can
---      actually be used.
---
---      - Because we have back tracking... it seems that we may be able to
---      assign variables to multiple locations. First we can try the next
---      available register (and possible all available registers...), and next
---      we can try adding a memory location. That way for small programs all of
---      the variables will fit into registers, and for large programs some or
---      all will be on the stack.
---
--- 3) Conditionals
+-- 2) Conditionals
 --      - This is fairly trivial compared to the previous milestones. This
 --      involves the addition of flag locations and modifying the expression
 --      datatype to include conditionals, and the eval function to add flag
@@ -106,7 +90,7 @@ data CodeGenState       = CodeGenState {
     ,   randomGenerator     :: StdGen
     ,   variableMap         :: VariableMap
     ,   locationPool        :: LocationPool
-    ,   generatedCode       :: [Either Metadata JumpHolder]
+    ,   generatedCode       :: [Either JumpHolder Metadata]
     ,   currentPredicate    :: Integer
     ,   predicateToByte     :: M.Map Integer Integer -- ^ Maps from predicate indices to byte indices
     ,   localVariableOffset :: Integer -- ^ How far from EBP should we assign the next local variable?
@@ -181,14 +165,14 @@ jump = calculateJump G.Jump
 -- translated to 'JumpHolder's of each possible size which later become fulfilled
 -- by subsequent calls to 'makePredicate'.
 calculateJump :: (Integer -> G.Gadget) -> Integer -> Predicate ()
-calculateJump jumpFlavor offset =
-    if offset <= 0
-        then do 
-            state@CodeGenState{..}  <- get
-            byteIndex               <- lift $ maybeToList $ M.lookup (currentPredicate) predicateToByte
-            jumpByteIndex           <- lift $ maybeToList $ M.lookup (currentPredicate+offset) predicateToByte
-            makePredicate [[jumpFlavor (jumpByteIndex - byteIndex)]]
-        else do
+calculateJump jumpFlavor offset = do
+--    if offset <= 0
+--        then do 
+--            state@CodeGenState{..}  <- get
+--            byteIndex               <- lift $ maybeToList $ M.lookup (currentPredicate) predicateToByte
+--            jumpByteIndex           <- lift $ maybeToList $ M.lookup (currentPredicate+offset) predicateToByte
+--            makePredicate [[jumpFlavor (jumpByteIndex - byteIndex)]]
+--        else do
             state@CodeGenState{..}  <- get
             let jumpGadgets         = filter isJump $ M.keys $ D.gadgetMap library :: [G.Gadget]
             -- | This is pretty ugly and there is probably a better way to do
@@ -212,7 +196,7 @@ calculateJump jumpFlavor offset =
                 ,   target      = (currentPredicate + offset)
                 }
             put $! state{
-                    generatedCode       = generatedCode ++ [Right jumpHolder]
+                    generatedCode       = generatedCode ++ [Left jumpHolder]
                 ,   predicateToByte     = M.insert (currentPredicate+1) (currentOffset+jumpLength) predicateToByte
                 ,   currentPredicate    = currentPredicate + 1 
                 }
@@ -284,11 +268,38 @@ moveHelper _ a b
 generate :: D.GadgetLibrary -> StdGen -> PredicateProgram -> Maybe [Metadata]
 generate library gen program = 
         listToMaybe -- If there are any solutions return Just the first
-    $   map lefts -- Turn the Either values into Meta lists
-    $   filter (null . rights) -- Remove solutions with hanging jumps
-    $   map (generatedCode . snd) -- Turn solutions into [Either Meta Jump]
+    $   map rights -- Turn the Either values into Meta lists
+    $   filter (null . lefts) -- Remove solutions with hanging jumps
+    $   map (replaceAllJumpHolders . snd) -- Turn solutions into [Either Meta Jump]
     $   runStateT program -- Create a really long list of solutions
     $   initialState library gen 
+    where
+        -- | Attempts to replace forward jump statements for a given element in
+        -- generatedCode. Because a jumpHolder may be replaced by several
+        -- instructions it is necessary to return a list of lists and then
+        -- concat the results.
+        replaceAllJumpHolders :: CodeGenState -> [Either JumpHolder Metadata]
+        replaceAllJumpHolders CodeGenState{..} = 
+            let
+                jumpReplacers   = map ((uncurry $ replaceJumpHolders locationPool)) $ M.assocs predicateToByte
+                replacedCode    = foldrM (\j c -> liftM concat $ mapM j c) generatedCode jumpReplacers
+            in
+                fst $ sampleState (replacedCode :: RVar [Either JumpHolder Metadata]) randomGenerator
+
+        replaceJumpHolders :: LocationPool -> Integer -> Integer -> Either JumpHolder Metadata -> RVar [Either JumpHolder Metadata]
+        replaceJumpHolders locationPool predIndex byteOffset j@(Left (JumpHolder {..}))
+            | predIndex == target   = do
+                let jumpGarbageSize         = if target <= 0 then length else 0
+                let gadgets                 = filter ((length==) . foldr' (+) 0 . map (fromIntegral . mdLength) . fst)
+                                                $ concatMap S.toList
+                                                $ maybeToList
+                                                $ D.libraryLookup (jumpFlavor (byteOffset-jumpOffset-jumpGarbageSize)) library
+                shuffled                    <- shuffle gadgets
+                case listToMaybe $ filter (doesNotClobber locationPool) $ shuffled of --shuffled
+                    Nothing         -> return [j]
+                    Just (meta,_)   -> return $ map Right meta
+            | otherwise             = return [j]
+        replaceJumpHolders _ _ _ meta = return [meta]
 
 -- | Create a variable for use with the predicate functions.
 makeVariable :: Predicate Variable
@@ -354,8 +365,7 @@ makePredicate allGadgetStreams = do
     metaStream                  <- liftM concat $ mapM translateGadget gadgetStream -- translate all of the gadgets to instructions
     byteIndex                   <- lift $ maybeToList $ M.lookup currentPredicate predicateToByte
     let nextByteIndex           = byteIndex + (foldr' (+) 0 $ map (fromIntegral . mdLength) metaStream)
-    jumpReplacedCode            <- liftM concat $ mapM (replaceJumpHolders currentPredicate byteIndex) generatedCode
-    let newCode                 = jumpReplacedCode ++ (map Left metaStream)
+    let newCode                 = generatedCode ++ (map Right metaStream)
     put $! state{
             generatedCode       = newCode
         ,   predicateToByte     = M.insert (currentPredicate+1) nextByteIndex predicateToByte
@@ -382,25 +392,6 @@ makePredicate allGadgetStreams = do
                 }
             meta                        <- lift $ map fst $ filter (doesNotClobber newLocationPool) $ shuffled
             return $! meta
-
-        -- | Attempts to replace forward jump statements for a given element in
-        -- generatedCode. Because a jumpHolder may be replaced by several
-        -- instructions it is necessary to return a list of lists and then
-        -- concat the results.
-        replaceJumpHolders :: Integer -> Integer -> (Either Metadata JumpHolder) -> Predicate ([Either Metadata JumpHolder])
-        replaceJumpHolders predIndex byteOffset j@(Right (JumpHolder {..}))
-            | predIndex == target   = do
-                state@(CodeGenState{..})    <- get
-                let gadgets                 = filter ((length==) . foldr' (+) 0 . map (fromIntegral . mdLength) . fst)
-                                                $ concatMap S.toList
-                                                $ maybeToList
-                                                $ D.libraryLookup (jumpFlavor (byteOffset-jumpOffset)) library
-                let (shuffled,gen)          = sampleState (shuffle gadgets) randomGenerator
-                (meta, _)                   <- lift $ filter (doesNotClobber locationPool) $ shuffled
-                put $! state{ randomGenerator = gen }
-                return $! map Left meta
-            | otherwise             = return [j]
-        replaceJumpHolders _ _ meta = return [meta]
 
    
 -- | Ensures that a gadget realization does not clobber locations that

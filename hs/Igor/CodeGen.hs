@@ -99,14 +99,18 @@ data CodeGenState       = CodeGenState {
 initialState :: D.GadgetLibrary -> StdGen -> CodeGenState
 initialState library gen = CodeGenState {
         library             = library
-    ,   randomGenerator     = gen
+    ,   randomGenerator     = gen'
     ,   variableMap         = M.empty
-    ,   locationPool        = map X.RegisterLocation X.generalRegisters
+    ,   locationPool        = shuffledPool
     ,   generatedCode       = []
     ,   currentPredicate    = 0
     ,   predicateToByte     = M.insert 0 0 M.empty
     ,   localVariableOffset = 0
     }
+    where
+        pool                    = map X.RegisterLocation X.generalRegisters
+        (shuffledPool, gen')    = sampleState (shuffle pool) gen
+        
 
 --------------------------------------------------------------------------------
 -- Predicates

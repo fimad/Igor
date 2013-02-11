@@ -74,7 +74,8 @@ matchGadgets source expression = catMaybes $ map ($ expression) gadgetMatchers
             , matchJump
             ]
 
-        matchNoOp _ _ = Just (NoOp, [])
+        --matchNoOp _ _ = Just (NoOp, [])
+        matchNoOp _ _ = Nothing
 
         matchLoadReg
             srcLoc@(X.RegisterLocation srcReg)

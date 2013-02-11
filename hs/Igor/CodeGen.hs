@@ -20,6 +20,7 @@ module Igor.CodeGen
 import              Control.Monad.State
 import              Data.Either
 import              Data.Function
+import              Data.Foldable (foldr')
 import              Data.List
 import qualified    Data.Map                as M
 import              Data.Maybe
@@ -62,13 +63,6 @@ import              System.Random
 --      we can try adding a memory location. That way for small programs all of
 --      the variables will fit into registers, and for large programs some or
 --      all will be on the stack.
---
---      - The easiest implementation I can think of for this would be to choose
---      the smallest non-overlapping x such that [EBP+x] points to free memory
---      and assigning that to the variable. The state would need to keep track
---      of how much memory has been allocated for local variables, and then at
---      the end of generation prepend a stack modification that moves ESP at
---      least that far beyond the end of the stack.
 --
 -- 3) Conditionals
 --      - This is fairly trivial compared to the previous milestones. This
@@ -196,17 +190,20 @@ calculateJump jumpFlavor offset =
             makePredicate [[jumpFlavor (jumpByteIndex - byteIndex)]]
         else do
             state@CodeGenState{..}  <- get
-            let jumpGadgets         = M.filterWithKey (\k _ -> isJump k) library
+            let jumpGadgets         = filter isJump $ M.keys $ D.gadgetMap library :: [G.Gadget]
             -- | This is pretty ugly and there is probably a better way to do
             -- this, but this will find all of the possible lengths that a jump
             -- instruction can be.
             currentOffset           <- lift $ maybeToList $ M.lookup (currentPredicate) predicateToByte
-            jumpLength              <- lift
-                                        $ S.toList 
-                                        $ S.fromList
-                                        $ map (sum . map (fromIntegral . mdLength) . fst) 
-                                        $ concatMap S.elems
-                                        $ M.elems jumpGadgets
+            jumpLength              <- lift  
+                                        . S.toList 
+                                        . S.fromList
+                                        . map (sum . map (fromIntegral . mdLength) . fst) 
+                                        . concatMap S.elems
+                                        =<< (   lift
+                                            $   maybeToList
+                                            $   mapM (flip D.libraryLookup library) jumpGadgets
+                                            )
             currentOffset           <- lift $ maybeToList $ M.lookup (currentPredicate) predicateToByte
             let jumpHolder          = JumpHolder {
                     jumpFlavor  = jumpFlavor
@@ -214,7 +211,7 @@ calculateJump jumpFlavor offset =
                 ,   length      = jumpLength 
                 ,   target      = (currentPredicate + offset)
                 }
-            put state{
+            put $! state{
                     generatedCode       = generatedCode ++ [Right jumpHolder]
                 ,   predicateToByte     = M.insert (currentPredicate+1) (currentOffset+jumpLength) predicateToByte
                 ,   currentPredicate    = currentPredicate + 1 
@@ -235,8 +232,8 @@ moveHelper pool (X.RegisterLocation a) (X.RegisterLocation b)
     | otherwise = [[G.LoadReg a b]]
 
 moveHelper pool (X.MemoryLocation a offset) bLoc@(X.RegisterLocation b)  =
-        [ [G.StoreMemReg a offset b] ]
-    ++  [
+        [G.StoreMemReg a offset b]
+    :   [
             [
                 G.LoadReg taReg a
             ,   G.LoadReg tbReg b
@@ -248,8 +245,8 @@ moveHelper pool (X.MemoryLocation a offset) bLoc@(X.RegisterLocation b)  =
         ]
 
 moveHelper pool aLoc@(X.RegisterLocation a) (X.MemoryLocation b offset)  =
-        [ [G.LoadMemReg a b offset] ]
-    ++  [
+        [G.LoadMemReg a b offset]
+    :   [
             [
                 G.LoadReg tb b
             ,   G.LoadMemReg ta tb offset
@@ -299,7 +296,7 @@ makeVariable = do
     state@CodeGenState{..}      <- get
     -- Find the next available offset from EBP to use as the local stack
     -- variable
-    let (readable,writeable)    = M.foldrWithKey' findValidOffsets ([],[]) library
+    let (readable,writeable)    = M.foldrWithKey' findValidOffsets ([],[]) $ D.gadgetMap library
     let validOffsets            = map fromIntegral $ reverse $ sort $ readable `intersect` writeable
     stackOffset                 <- lift $ take 1 $ filter (<=localVariableOffset - 4) validOffsets
     let stackVariable           = X.MemoryLocation X.EBP $ fromIntegral stackOffset
@@ -308,7 +305,7 @@ makeVariable = do
     --variableLocation            <- lift $ (take 1 locationPool)++[stackVariable]++(drop 1 locationPool)
 --    variableLocation            <- lift $ locationPool++[stackVariable]
     variableLocation            <- lift $ [stackVariable]
-    put state {
+    put $! state {
             variableMap         = M.insert variableId variableLocation variableMap
         ,   locationPool        = locationPool \\ [variableLocation]
         ,   localVariableOffset = stackOffset
@@ -356,10 +353,10 @@ makePredicate allGadgetStreams = do
     gadgetStream                <- lift allGadgetStreams -- grab a sequence of gadgets that do what we want
     metaStream                  <- liftM concat $ mapM translateGadget gadgetStream -- translate all of the gadgets to instructions
     byteIndex                   <- lift $ maybeToList $ M.lookup currentPredicate predicateToByte
-    let nextByteIndex           = byteIndex + (sum $ map (fromIntegral . mdLength) metaStream)
+    let nextByteIndex           = byteIndex + (foldr' (+) 0 $ map (fromIntegral . mdLength) metaStream)
     jumpReplacedCode            <- liftM concat $ mapM (replaceJumpHolders currentPredicate byteIndex) generatedCode
     let newCode                 = jumpReplacedCode ++ (map Left metaStream)
-    put state{
+    put $! state{
             generatedCode       = newCode
         ,   predicateToByte     = M.insert (currentPredicate+1) nextByteIndex predicateToByte
         ,   currentPredicate    = currentPredicate + 1 
@@ -374,15 +371,17 @@ makePredicate allGadgetStreams = do
         translateGadget gadget = do
             state@(CodeGenState{..})    <- get
             gadgetSet                   <- lift $ maybeToList $ D.libraryLookup gadget library
-            let (shuffled,gen)          = sampleState (shuffle $ S.toList gadgetSet) randomGenerator
+            let (shuffled,gen)          = sampleState (shuffle $! S.toList gadgetSet) randomGenerator
+            let newLocationPool         = locationPool \\ G.defines gadget
             -- put the generator in the state so that the jump replacement code
             -- and future gadgets can be random as well
-            put state {
+            put $! state {
                     randomGenerator = gen
                     -- Remove any intermediate values from the location pool
-                ,   locationPool    = locationPool \\ G.defines gadget
+                ,   locationPool    = newLocationPool
                 }
-            lift $ map fst $ filter (doesNotClobber variableMap) $ shuffled
+            meta                        <- lift $ map fst $ filter (doesNotClobber newLocationPool) $ shuffled
+            return $! meta
 
         -- | Attempts to replace forward jump statements for a given element in
         -- generatedCode. Because a jumpHolder may be replaced by several
@@ -392,33 +391,27 @@ makePredicate allGadgetStreams = do
         replaceJumpHolders predIndex byteOffset j@(Right (JumpHolder {..}))
             | predIndex == target   = do
                 state@(CodeGenState{..})    <- get
-                let gadgets                 = filter ((length==) . sum . map (fromIntegral . mdLength) . fst)
+                let gadgets                 = filter ((length==) . foldr' (+) 0 . map (fromIntegral . mdLength) . fst)
                                                 $ concatMap S.toList
                                                 $ maybeToList
                                                 $ D.libraryLookup (jumpFlavor (byteOffset-jumpOffset)) library
                 let (shuffled,gen)          = sampleState (shuffle gadgets) randomGenerator
-                (meta, _)                   <- lift $ filter (doesNotClobber variableMap) $ shuffled
-                put state{ randomGenerator = gen }
-                return $ map Left meta
+                (meta, _)                   <- lift $ filter (doesNotClobber locationPool) $ shuffled
+                put $! state{ randomGenerator = gen }
+                return $! map Left meta
             | otherwise             = return [j]
         replaceJumpHolders _ _ meta = return [meta]
 
    
 -- | Ensures that a gadget realization does not clobber locations that
 -- should not be clobbered.
-doesNotClobber variables (_,[])         = True
-doesNotClobber variables (_,clobber)    = 
+doesNotClobber locationPool (_,[])         = True
+doesNotClobber locationPool (_,clobber)    = 
     let
-        clobberSet              = (S.fromList clobber)
-        usedLocations           = (S.fromList $ M.elems $ variables)
-        untouchableLocations    = usedLocations `S.union` (S.fromList $ map X.RegisterLocation X.specialRegisters)
-        clobbersUsedLocations   = clobberSet `S.intersection` untouchableLocations /= S.empty
-        isMemoryLocation a      = case a of
-            X.MemoryLocation _ _    -> True
-            _                       -> False
-        clobbersMemoryLocations = any isMemoryLocation clobber 
+        clobberSet              = S.fromList clobber
+        clobberAbleLocations    = S.fromList locationPool
     in
-        not clobbersMemoryLocations && not clobbersUsedLocations
+        clobberSet `S.union` clobberAbleLocations == clobberAbleLocations
 
 -- | Translates a variable into an expression location.
 varToLoc :: CodeGenState -> Variable -> X.Location

@@ -5,10 +5,13 @@ import              Igor
 import              Igor.ByteModel
 import              Igor.Gadget
 import              Igor.Gadget.Discovery
+import              System.Random
 
 main :: IO ()
 main = do
-    library <- discover 10000 $ generate $ uniform 16
+    gen             <- newStdGen
+    let generator   = generate $ uniform 16
+    let library     = discover gen 10000 generator
     sequence_ $ map prettyPrint $ M.toList library
 
     where

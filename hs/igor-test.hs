@@ -7,7 +7,7 @@ import              System.Random
 main :: IO ()
 main = do
     putStrLn "Loading library..."
-    library <- load "library" :: IO GadgetLibrary
+    library <- load "library"
     putStrLn "Generating code..."
     gen     <- newStdGen
     case generate library gen testProgram of
@@ -25,7 +25,6 @@ testProgram = do
     [v1,v2] <- makeVariables 2
 --    jump 4
 --    jump 2
-    move v1 v2
     move v1 v2
 --    jump (-2)
 --    jump (-4)

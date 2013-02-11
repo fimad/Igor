@@ -1,9 +1,9 @@
 import              Data.Binary
-import              Data.Map
 import              Igor.ByteModel
 import              Igor.Gadget.Discovery
 import              System.Directory
 import              System.Environment
+import              System.Mem
 import              System.Random
 
 main :: IO ()
@@ -21,16 +21,11 @@ main = do
                                         return emptyLibrary
             putStrLn "Looking for gadgets..."
             gen             <- newStdGen
-            let newLibrary  = discover gen 50000 $ generate $ uniform 16
-            mergedLibrary   <- if existingLibrary /= emptyLibrary
-                                    then do
-                                        putStrLn "Adding newly discovered gadgets..."
-                                        return $ existingLibrary `merge` newLibrary
-                                    else
-                                        return newLibrary
-            putStrLn "Writing to file..."
-            --encodeFile file mergedLibrary
-            save file mergedLibrary
+            let generator   = generate $ uniform 16
+--            let newLibrary  = foldr1 merge $ map ($ generator) $ replicate 10 $ discover gen 10000
+            let newLibrary  = discoverMore 10000 generator gen existingLibrary
+            putStrLn "Working..."
+            save file newLibrary
             putStrLn "Done!"
         _      ->
             putStrLn $ concat $ ["Usage: ", progName, " gadgetLibraryFile"]

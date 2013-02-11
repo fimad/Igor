@@ -96,7 +96,7 @@ eval = liftM fst . foldM (\s m -> eval'' s (fromIntegral $ H.mdLength m) $ H.mdI
 
 -- | A hack to stop the evaluation of instructions after an unconditional jump.
 eval'' :: (State,Bool) -> Int32 -> H.Instruction -> Maybe (State,Bool)
-eval'' (state,True) _ _                 = return (state,True)
+eval'' (state,True) _ _                 = Nothing
 eval'' (state,False) size instruction   = eval' state size instruction
 
 -- | Evaluates a single instruction, if we are unable to emulate the instruction

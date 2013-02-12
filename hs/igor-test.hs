@@ -26,11 +26,9 @@ main = do
 
 testProgram :: PredicateProgram
 testProgram = do
-    [v1,v2,v3,v4,v5,v6,v7] <- makeVariables 7
-    jump 6
+    [v1,v2,v3]  <- makeVariables 3
+    --start       <- makeLabel
     move v1 v2
     move v2 v3
-    move v3 v4
-    move v5 v6
-    move v6 v7
-    jump (-6)
+    start       <- makeLabel
+    jump start (v1 ->- v3)

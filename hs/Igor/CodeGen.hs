@@ -8,13 +8,22 @@ module Igor.CodeGen
 , PredicateProgram
 -- * Methods
 , generate
+, makeLabel
 , makeVariable
 , makeVariables
 -- ** Predicates
 , move
 , add
+, sub
 , jump
 , noop
+-- *** Jump Reasons
+, (-<-)
+, (-<=-)
+, (->-)
+, (->=-)
+, (-==-)
+, (-!=-)
 ) where
 
 import              Control.Monad.State
@@ -75,6 +84,10 @@ type VariableMap        = M.Map Variable X.Location
 type PredicateProgram   = StateT CodeGenState [] ()
 type Predicate a        = StateT CodeGenState [] a
 
+-- | The condition upon which the jump depends
+data JumpReason         = Always
+                        | Because X.Reason X.Location X.Location
+
 -- | A place holder for a jump. In the event that a predicate attempts to jump
 -- ahead to code that has not been generated yet, it will instead drop a
 -- JumpHolder which contains enough information so that a second pass through
@@ -125,6 +138,25 @@ move a b = do
     CodeGenState{..} <- get
     makePredicate2 (moveHelper locationPool) a b
 
+sub :: Variable -> Variable -> Variable -> Predicate ()
+sub a b c = do
+    CodeGenState{..} <- get
+    makePredicate3 (add' locationPool) a b c
+    where
+        add' pool a b c = 
+            [ 
+                    moveB -- Move u to a temporary register
+                ++  moveC -- Move v to a temporary register
+                ++  [G.Minus bReg bReg cReg] -- We are more likely to find an minus involving 2 registers
+                ++  moveA -- Move the result into a
+            | 
+                    bLoc@(X.RegisterLocation bReg) <- a:b:pool
+                ,   cLoc@(X.RegisterLocation cReg) <- (c:pool) \\ [bLoc]
+                ,   moveB <- moveHelper pool bLoc b -- Move b into x
+                ,   moveC <- moveHelper pool cLoc c -- Move c into y
+                ,   moveA <- moveHelper pool a bLoc -- Move the result into a
+            ]
+
 add :: Variable -> Variable -> Variable -> Predicate ()
 add a b c = do
     CodeGenState{..} <- get
@@ -157,8 +189,58 @@ add a b c = do
                 ,   moveA <- moveHelper pool a xLoc -- Move the result into a
             ]
 
-jump :: Integer -> Predicate ()
-jump = calculateJump $ G.Jump X.Always
+jump :: Integer -> Predicate JumpReason -> Predicate ()
+jump index reason = do
+    reason' <- reason
+    case reason' of
+        Always                  -> calculateJump (G.Jump X.Always) index
+        (Because reason a b)    -> do
+            CodeGenState{..} <- get
+            let compare' = [ 
+                        moveA ++  moveB ++  [G.Compare aReg bReg] | 
+                        aLoc@(X.RegisterLocation aReg) <- a:locationPool
+                    ,   bLoc@(X.RegisterLocation bReg) <- (b:locationPool) \\ [aLoc]
+                    ,   moveA <- moveHelper locationPool aLoc a -- Move b into x
+                    ,   moveB <- moveHelper locationPool bLoc b -- Move c into y
+                    ]
+            makePredicate compare'
+            calculateJump (G.Jump reason) index
+
+(->-) :: Variable -> Variable -> Predicate JumpReason
+a ->- b = do
+    a' <- varToLoc' a
+    b' <- varToLoc' b
+    return $ Because X.Greater a' b'
+
+(->=-) :: Variable -> Variable -> Predicate JumpReason
+a ->=- b = do
+    a' <- varToLoc' a
+    b' <- varToLoc' b
+    return $ Because X.GreaterEqual a' b'
+
+(-<-) :: Variable -> Variable -> Predicate JumpReason
+a -<- b = do
+    a' <- varToLoc' a
+    b' <- varToLoc' b
+    return $ Because X.Less a' b'
+
+(-<=-) :: Variable -> Variable -> Predicate JumpReason
+a -<=- b = do
+    a' <- varToLoc' a
+    b' <- varToLoc' b
+    return $ Because X.LessEqual a' b'
+
+(-==-) :: Variable -> Variable -> Predicate JumpReason
+a -==- b = do
+    a' <- varToLoc' a
+    b' <- varToLoc' b
+    return $ Because X.Equal a' b'
+
+(-!=-) :: Variable -> Variable -> Predicate JumpReason
+a -!=- b = do
+    a' <- varToLoc' a
+    b' <- varToLoc' b
+    return $ Because X.NotEqual a' b'
 
 --------------------------------------------------------------------------------
 -- Predicate Helper Functions
@@ -170,7 +252,7 @@ jump = calculateJump $ G.Jump X.Always
 -- translated to 'JumpHolder's of each possible size which later become fulfilled
 -- by subsequent calls to 'makePredicate'.
 calculateJump :: (Integer -> G.Gadget) -> Integer -> Predicate ()
-calculateJump jumpFlavor offset = do
+calculateJump jumpFlavor target = do
 --    if offset <= 0
 --        then do 
 --            state@CodeGenState{..}  <- get
@@ -193,12 +275,11 @@ calculateJump jumpFlavor offset = do
                                             $   maybeToList
                                             $   mapM (flip D.libraryLookup library) jumpGadgets
                                             )
-            currentOffset           <- lift $ maybeToList $ M.lookup (currentPredicate) predicateToByte
             let jumpHolder          = JumpHolder {
                     jumpFlavor  = jumpFlavor
                 ,   jumpOffset  = currentOffset
                 ,   length      = jumpLength 
-                ,   target      = (currentPredicate + offset)
+                ,   target      = target
                 }
             put $! state{
                     generatedCode       = generatedCode ++ [Left jumpHolder]
@@ -339,6 +420,11 @@ makeVariable = do
 makeVariables :: Int -> Predicate [Variable]
 makeVariables n = sequence $ replicate n makeVariable
 
+-- | Creates a 'label' which is just an integer containing to the current
+-- predicate index.
+makeLabel ::Predicate Integer
+makeLabel = get >>= return . (1+) . currentPredicate
+
 --------------------------------------------------------------------------------
 -- Predicate to Gadget translation
 --------------------------------------------------------------------------------
@@ -411,6 +497,11 @@ doesNotClobber locationPool (_,clobber)    =
 -- | Translates a variable into an expression location.
 varToLoc :: CodeGenState -> Variable -> X.Location
 varToLoc (CodeGenState {..}) var = fromJust $ M.lookup var variableMap
+
+varToLoc' :: Variable -> Predicate X.Location
+varToLoc' var = do
+    (CodeGenState {..})  <- get
+    return $ fromJust $ M.lookup var variableMap
 
 --locToVar :: CodeGenState -> X.Location -> Maybe Variable
 --locToVar (_,vars,_) targetLoc = M.foldWithKey findLoc Nothing vars 

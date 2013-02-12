@@ -21,7 +21,7 @@ import              Data.Word
 import              Hdis86
 import              Hdis86.Incremental
 import              Hdis86.Types
-import              Igor.Binary
+import              Igor.Derive
 
 -- | A model randomly generates a finite list of bytes according to a given byte
 -- distribution.

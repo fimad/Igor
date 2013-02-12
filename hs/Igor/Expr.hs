@@ -5,7 +5,7 @@ module Igor.Expr
   Address
 , Value
 , Register (..)
-, Flag (..)
+, Reason (..)
 , Location (..)
 , Expression (..)
 , generalRegisters
@@ -37,7 +37,22 @@ data Register = EAX
                 -- even though it is actually being adjusted after every
                 -- instruction executes...
               | EIP 
+                -- | I suppose this is also kind of a lie. The flag register is
+                -- sort of treated as a black box, any instruction that modifies
+                -- the flag besides cmp is said to clobber the flags. The only
+                -- instruction that meaningfully 
+              | EFLAG
     deriving (Ord, Eq, Show, Read, Enum, Bounded)
+
+-- | A reason for branching.
+data Reason = Always
+            | GreaterEqual
+            | Greater
+            | LessEqual
+            | Less
+            | Equal
+            | NotEqual
+    deriving (Ord, Eq, Show, Read)
 
 -- | General purpose registers that can be used as variables or scratch
 -- space or what ever.
@@ -49,17 +64,11 @@ generalRegisters = [EAX .. ESI]
 specialRegisters :: [Register]
 specialRegisters = [minBound .. maxBound] \\ generalRegisters
 
-
--- | Todo: Find out what some flags are?
-data Flag = NoFlag
-    deriving (Ord, Eq, Show, Read)
-
 -- | If you think of the state of a machine as a dictionary, Locations are keys,
 -- and include things like memory locations, registers and status flags.
 data Location = --MemoryLocation Address
                 MemoryLocation Register Value
               | RegisterLocation Register 
-              | FlagLocation Flag
     deriving (Ord, Eq, Show, Read)
 
 data Expression = InitialValue Location
@@ -67,14 +76,26 @@ data Expression = InitialValue Location
                 | Plus Expression Expression
                 | Minus Expression Expression
                 | RightShift Expression Expression -- ^ Corresponds to a right logical shift
+                -- | An expression that sets the flag bits of the source to be
+                -- the result of comparing the two locations.
+                | Comparison Expression Expression 
+                -- | Corresponds to some value we don't care about
+                | Clobbered 
+                -- | If some condition is true, then the expression happens. This
+                -- is only really useful for conditional jumps. If you tried to
+                -- use it to log effects after conditional jumps then you would
+                -- end up overwriting the state they were previously in. You
+                -- would need to extend it to include both possible locations
+                -- and that is overly complex for what it is actually used for.
+                | Conditional Reason Expression
     deriving (Ord, Eq, Show, Read)
 
+$( derive makeBinary ''Reason )
 $( derive makeBinary ''Register )
-$( derive makeBinary ''Flag )
 $( derive makeBinary ''Location )
 $( derive makeBinary ''Expression )
 
+$( derive makeNFData ''Reason )
 $( derive makeNFData ''Register )
-$( derive makeNFData ''Flag )
 $( derive makeNFData ''Location )
 $( derive makeNFData ''Expression )

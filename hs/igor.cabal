@@ -18,9 +18,9 @@ Library
     Extensions:     RecordWildCards
     Exposed-Modules:
         Igor
-        Igor.Binary
         Igor.ByteModel
         Igor.CodeGen
+        Igor.Derive
         Igor.Expr
         Igor.Eval
         Igor.Gadget
@@ -43,6 +43,10 @@ Library
 Executable discover-gadgets
     ghc-options: -O2 -threaded
     Main-Is: discover-gadgets.hs
+
+Executable discover-gadgets-test
+    ghc-options: -O2 -threaded
+    Main-Is: discover-gadgets-test.hs
 
 Executable igor-test
     ghc-options: -O2 -threaded

@@ -76,6 +76,10 @@ operandToExpression (H.Jump word) _     = Just $ Constant (fromIntegral $ H.iVal
 operandToExpression (H.Const word) _    = Just $ Constant (fromIntegral $ H.iValue word)
 operandToExpression location state      = valueOf (operandToLocation location) state
 
+--------------------------------------------------------------------------------
+-- Utilities to use in the eval method
+--------------------------------------------------------------------------------
+
 -- | For simple opcodes that have a direct mapping to an expression,
 -- this function will pull out 2 operands, turn then to expressions and
 -- insert the result into the corresponding source location in the
@@ -88,6 +92,32 @@ buildExpr2 state expr operands = do
     srcValue    <- operandToExpression src state
     dstValue    <- operandToExpression dst state
     return (M.insert dstLocation (expr dstValue srcValue) state, False)
+
+-- | Marks that the flags register has been clobbered
+clobbersFlags :: State -> State
+clobbersFlags state = M.insert (RegisterLocation EFLAG) (Clobbered) state
+
+-- | Marks the flags register as containing the result of a comparison
+compareExpr :: State -> [H.Operand] -> Maybe State
+compareExpr state operands = do
+    dst         <- listToMaybe $ operands
+    src         <- listToMaybe $ drop 1 $ operands
+    srcValue    <- operandToExpression src state
+    dstValue    <- operandToExpression dst state
+    return $! M.insert (RegisterLocation EFLAG) (Comparison dstValue srcValue) state
+
+buildJump :: State -> Int32 -> (Value -> Expression) -> [H.Operand] -> Maybe (State, Bool)
+buildJump state size expr operands = do
+    src                 <- listToMaybe operands
+    (Constant srcValue) <- operandToExpression src state
+    case valueOf (Just $ RegisterLocation EIP) state of
+        Just (InitialValue (RegisterLocation EIP))  -> return 
+                                                    $ (M.insert (RegisterLocation EIP) (expr $ srcValue + size) state, True)
+        _                                           -> Nothing
+
+--------------------------------------------------------------------------------
+-- The many cases of eval....
+--------------------------------------------------------------------------------
 
 -- | Evaluates a list of instructions starting with an 'initialState' by
 -- sequentially applying the 'eval' method.
@@ -106,13 +136,6 @@ eval' :: State -> Int32 -> H.Instruction -> Maybe (State, Bool)
 eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Inop})     = Just (state,False)
 eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ipause})   = Just (state,False)
 
-eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Iinc})     = do
-    dst         <- listToMaybe $ H.inOperands instruction
-    dstLocation <- operandToLocation dst
-    dstExpr     <- operandToExpression dst state
-    let dstValue =  Plus (Constant 1) dstExpr
-    return $ (M.insert dstLocation dstValue state, False)
-
 eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Imov})     = do
     dst         <- listToMaybe $ H.inOperands instruction
     src         <- listToMaybe $ drop 1 $ H.inOperands instruction
@@ -120,14 +143,33 @@ eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Imov})     
     srcValue    <- operandToExpression src state
     return $ (M.insert dstLocation srcValue state, False)
 
+--------------------------------------------------------------------------------
+-- Arithmetic
+--------------------------------------------------------------------------------
+
+eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Iinc})     = do
+    let state'  = clobbersFlags state
+    dst         <- listToMaybe $ H.inOperands instruction
+    dstLocation <- operandToLocation dst
+    dstExpr     <- operandToExpression dst state'
+    let dstValue =  Plus (Constant 1) dstExpr
+    return $ (M.insert dstLocation dstValue state', False)
+
 eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Iadd})     = do
-    buildExpr2 state Plus (H.inOperands instruction)
+    let state'  = clobbersFlags state
+    buildExpr2 state' Plus (H.inOperands instruction)
 
 eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Isub})     = do
-    buildExpr2 state Minus (H.inOperands instruction)
+    state'      <- compareExpr state (H.inOperands instruction)
+    buildExpr2 state' Minus (H.inOperands instruction)
 
 eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ishr})     = do
-    buildExpr2 state RightShift (H.inOperands instruction)
+    let state'  = clobbersFlags state
+    buildExpr2 state' RightShift (H.inOperands instruction)
+
+--------------------------------------------------------------------------------
+-- Stack
+--------------------------------------------------------------------------------
 
 eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ipush})    = do
     src         <- listToMaybe $ H.inOperands instruction
@@ -154,14 +196,38 @@ eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ipop})     
                                                         , False)
         _                                           -> Nothing
 
--- | TODO: As way to get added random instructions, after an unconditional
--- branch we can take the rest of the stream without clobbering any locations
+--------------------------------------------------------------------------------
+-- Branches
+--------------------------------------------------------------------------------
+
+eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Icmp})     = do
+    state'      <- compareExpr state (H.inOperands instruction)
+    return (state', False)
+
 eval' state size instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ijmp})  = do
-    src                 <- listToMaybe $ H.inOperands instruction
-    (Constant srcValue) <- operandToExpression src state
-    case valueOf (Just $ RegisterLocation EIP) state of
-        Just (InitialValue (RegisterLocation EIP))  -> return $ (M.insert (RegisterLocation EIP) (Constant $ srcValue + size) state, True)
-        _                                           -> Nothing
+    buildJump state size Constant (H.inOperands instruction) 
+
+eval' state size instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ijz})  = do
+    buildJump state size (\c -> Conditional Equal $ Constant c) (H.inOperands instruction)
+
+eval' state size instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ijnz})  = do
+    buildJump state size(\c -> Conditional NotEqual $ Constant c) (H.inOperands instruction) 
+
+eval' state size instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ijge})  = do
+    buildJump state size(\c -> Conditional GreaterEqual $ Constant c) (H.inOperands instruction) 
+
+eval' state size instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ijg})  = do
+    buildJump state size(\c -> Conditional Greater $ Constant c) (H.inOperands instruction) 
+
+eval' state size instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ijle})  = do
+    buildJump state size(\c -> Conditional LessEqual $ Constant c) (H.inOperands instruction) 
+
+eval' state size instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ijl})  = do
+    buildJump state size(\c -> Conditional Less $ Constant c) (H.inOperands instruction) 
+
+--------------------------------------------------------------------------------
+-- Instructions we just can't deal with
+--------------------------------------------------------------------------------
 
 eval' _ _ _                                                                     = Nothing
 

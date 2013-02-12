@@ -30,7 +30,8 @@ data Gadget = NoOp
             | Plus X.Register (S.Set X.Register)
             | Minus X.Register X.Register X.Register
             | RightShift X.Register Integer
-            | Jump Integer
+            | Compare X.Register X.Register
+            | Jump X.Reason Integer
     deriving (Ord, Eq, Show, Read)
 $( derive makeBinary ''Gadget )
 $( derive makeNFData ''Gadget )
@@ -73,6 +74,7 @@ matchGadgets source expression = catMaybes $ map ($ expression) gadgetMatchers
             , matchPlus
             , matchMinus
             , matchRightShift
+            , matchCompare
             , matchJump
             ]
 
@@ -132,10 +134,21 @@ matchGadgets source expression = catMaybes $ map ($ expression) gadgetMatchers
         matchRightShift _ _ =
                 Nothing
 
+        matchCompare
+            srcLoc@(X.RegisterLocation X.EFLAG)
+            (X.Comparison (X.InitialValue (X.RegisterLocation a)) (X.InitialValue (X.RegisterLocation b))) =
+                Just (Compare a b, [X.RegisterLocation X.EFLAG])
+        matchCompare _ _ =
+                Nothing
+
         matchJump
             srcLoc@(X.RegisterLocation X.EIP)
             (X.Constant offset) =
-                Just (Jump $ fromIntegral offset, [X.RegisterLocation X.EIP])
+                Just (Jump X.Always $ fromIntegral offset, [X.RegisterLocation X.EIP])
+        matchJump
+            srcLoc@(X.RegisterLocation X.EIP)
+            (X.Conditional reason (X.Constant offset)) =
+                Just (Jump reason $ fromIntegral offset, [X.RegisterLocation X.EIP])
         matchJump _ _ =
                 Nothing
 

@@ -158,7 +158,7 @@ add a b c = do
             ]
 
 jump :: Integer -> Predicate ()
-jump = calculateJump G.Jump
+jump = calculateJump $ G.Jump X.Always
 
 --------------------------------------------------------------------------------
 -- Predicate Helper Functions
@@ -207,7 +207,7 @@ calculateJump jumpFlavor offset = do
                 }
     where
         isJump :: G.Gadget -> Bool
-        isJump (G.Jump _)   = True
+        isJump (G.Jump _ _) = True
         isJump _            = False
 
 -- | A helper function that will generate a sequence of gadgets that will move
@@ -262,9 +262,9 @@ moveHelper pool a@(X.MemoryLocation aReg aOffset) b@(X.MemoryLocation bReg bOffs
             ,   tLoc@(X.RegisterLocation tReg)   <- (pool \\ [tbLoc])
         ]
 
-moveHelper _ a b
-    | a == b    = [[]]
-    | otherwise = []
+--moveHelper _ a b
+--    | a == b    = [[]]
+--    | otherwise = []
 
 --------------------------------------------------------------------------------
 -- External API
@@ -319,9 +319,7 @@ makeVariable = do
     let stackVariable           = X.MemoryLocation X.EBP $ fromIntegral stackOffset
     -- Allocate an integer id for the new variable
     let variableId              = (maximum $ 0 : M.keys variableMap) + 1
-    --variableLocation            <- lift $ (take 1 locationPool)++[stackVariable]++(drop 1 locationPool)
     variableLocation            <- lift $ locationPool++[stackVariable]
---    variableLocation            <- lift $ [stackVariable]
     put $! state {
             variableMap         = M.insert variableId variableLocation variableMap
         ,   locationPool        = locationPool \\ [variableLocation]

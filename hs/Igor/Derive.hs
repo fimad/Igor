@@ -1,5 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
-module Igor.Binary
+module Igor.Derive
 where
 
 import              Control.DeepSeq
@@ -7,25 +7,6 @@ import              Data.Binary
 import              Data.ByteString
 import              Data.DeriveTH
 import              Hdis86.Types
-
-$( derive makeBinary ''XMMRegister)
-$( derive makeBinary ''X87Register)
-$( derive makeBinary ''MMXRegister)
-$( derive makeBinary ''DebugRegister)
-$( derive makeBinary ''ControlRegister)
-$( derive makeBinary ''Segment)
-$( derive makeBinary ''Half)
-$( derive makeBinary ''GPR)
-$( derive makeBinary ''WordSize)
-$( derive makeBinary ''Prefix)
-$( derive makeBinary ''Immediate )
-$( derive makeBinary ''Pointer )
-$( derive makeBinary ''Register )
-$( derive makeBinary ''Memory )
-$( derive makeBinary ''Opcode )
-$( derive makeBinary ''Operand )
-$( derive makeBinary ''Instruction )
-$( derive makeBinary ''Metadata )
 
 instance NFData ByteString where
     rnf s = Data.ByteString.length s `seq` ()

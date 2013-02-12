@@ -1,3 +1,4 @@
+import              Hdis86
 import              Hdis86.Types
 import qualified    Data.Map        as M
 import qualified    Data.Set        as S
@@ -11,8 +12,8 @@ main :: IO ()
 main = do
     gen             <- newStdGen
     let generator   = generate $ uniform 16
-    let library     = discover gen 10000 generator
-    sequence_ $ map prettyPrint $ M.toList library
+    let library  = discover 10000 generator gen
+    sequence_ $ map prettyPrint $ M.toList $ gadgetMap library
 
     where
         prettyPrint (gadget, instances) = do
@@ -20,7 +21,15 @@ main = do
             sequence_ $ map prettyPrint' $ S.toList instances
 
         prettyPrint' (meta, clobbered) = do
-            putStr $ unlines . map (("\t"++) . mdAssembly) $ meta
-            putStr $ unlines . map (("\t"++) . mdHex) $ meta
+            printBS meta
             putStrLn $ "\tClobbered: " ++ show clobbered
             putStrLn $ "\t" ++ replicate 40 '-' ++ "\n"
+            
+        printBS bs  = do
+            let metaList    =  disassembleMetadata hdisConfig bs
+            sequence_ $ map printMeta metaList
+
+        printMeta m = do
+            putStr $ show $ mdLength m
+            putStr "\t:\t"
+            putStrLn $ mdAssembly m

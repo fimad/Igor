@@ -33,7 +33,7 @@ import              Data.Maybe
 import              Data.Random
 import              Data.Random.RVar
 import              Data.Tuple
-import              Igor.Binary
+import              Igor.Derive
 import              Igor.ByteModel
 import              Igor.Eval
 import qualified    Igor.Gadget             as G
@@ -75,19 +75,12 @@ instance Binary GadgetLibrary where
 --------------------------------------------------------------------------------
 
 save :: String -> GadgetLibrary -> IO ()
---save file library = B.writeFile file . B.concat . LB.toChunks . compress . encode $ library
---save file library = LB.writeFile file . compress . encode $! library
---save file library = B.writeFile file . B.concat . LB.toChunks . encode $! library
---
---save file library = LB.writeFile file . encode $! library
 save file library = B.writeFile file . B.concat . LB.toChunks . encode $!! library
 
 load :: String -> IO GadgetLibrary
 load file = do
     library <- return . decode . LB.fromChunks . return =<< B.readFile file
     library `deepseq` performGC
---    byteString <- return . decompress =<< LB.readFile file
---    let library = decode byteString
     return $!! library
 
 emptyLibrary :: GadgetLibrary
@@ -131,7 +124,6 @@ discoverMore targetIncrease !generator gen library =  fst $ sampleState (discove
                     --stream          <- generator >>= return . subsequences
                     let newLibrary  = foldr' (uncurry libraryInsert) library $!! concatMap process stream
                     newLibrary `seq` discover' newLibrary
-                    --discover' newLibrary
 
         -- Turn an instruction stream into a list of key value pairs for the
         -- gadget library

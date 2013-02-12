@@ -107,7 +107,9 @@ libraryMerge :: GadgetLibrary -> GadgetLibrary -> GadgetLibrary
 libraryMerge a b = GadgetLibrary $ M.unionWith S.union (gadgetMap a) (gadgetMap b)
 
 libraryInsert :: G.Gadget -> (B.ByteString, G.ClobberList) -> GadgetLibrary -> GadgetLibrary
-libraryInsert !gadget !value !library = GadgetLibrary $! M.insertWith S.union gadget (S.singleton value) $ gadgetMap library
+libraryInsert !gadget !(value,clobber) !library = GadgetLibrary 
+                                                $! M.insertWith S.union gadget (S.singleton (B.copy value,clobber))
+                                                $ gadgetMap library
 
 -- | Given a target size and an instruction 'Metadata' 'Generator', builds a
 -- library of gadgets of that is at least as large as the target size.

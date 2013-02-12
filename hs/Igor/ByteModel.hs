@@ -36,8 +36,8 @@ hdisConfig = intel32 {cfgCPUMode = Mode32, cfgSyntax = SyntaxIntel}
 -- TODO: Implement an actual model...
 uniform :: Int -> Model
 uniform numBytes = do
-    let model   = U.stdUniform
-    result      <- sequence $ replicate numBytes model
+    let !model   = U.stdUniform
+    !result      <- sequence $ replicate numBytes model
     return $! B.pack result
 
 disassembleMetadata' config bytestring = reverse $! disas bytestring []
@@ -45,15 +45,15 @@ disassembleMetadata' config bytestring = reverse $! disas bytestring []
         disas bs !meta = 
             case disassembleOne config bs of
                 Nothing                 -> meta
-                Just (newMeta,newBs)    -> newMeta `seq` disas newBs (newMeta:meta)
+                Just (newMeta,newBs)    -> (newMeta,newBs) `deepseq` disas newBs (newMeta:meta)
 
 -- | Generates a random instruction stream based on the model function that is
 -- passed in.
 generate :: Model -> Generator
 generate !model = do
-    words       <- model
+    !words       <- model
     -- attempt to disassemble them
-    let !result  = disassembleMetadata hdisConfig $ words 
+    let !result  = disassembleMetadata' hdisConfig $ words 
     -- if successful return the instruction list, otherwise try again
     case result of
         []        -> generate model

@@ -18,6 +18,7 @@ module Igor.CodeGen
 ) where
 
 import              Control.Monad.State
+import qualified    Data.ByteString         as B
 import              Data.Either
 import              Data.Function
 import              Data.Foldable (foldr', foldrM)
@@ -90,7 +91,7 @@ data CodeGenState       = CodeGenState {
     ,   randomGenerator     :: StdGen
     ,   variableMap         :: VariableMap
     ,   locationPool        :: LocationPool
-    ,   generatedCode       :: [Either JumpHolder Metadata]
+    ,   generatedCode       :: [Either JumpHolder B.ByteString]
     ,   currentPredicate    :: Integer
     ,   predicateToByte     :: M.Map Integer Integer -- ^ Maps from predicate indices to byte indices
     ,   localVariableOffset :: Integer -- ^ How far from EBP should we assign the next local variable?
@@ -186,7 +187,7 @@ calculateJump jumpFlavor offset = do
             jumpLength              <- lift  
                                         . S.toList 
                                         . S.fromList
-                                        . map (sum . map (fromIntegral . mdLength) . fst) 
+                                        . map (fromIntegral . B.length . fst) 
                                         . concatMap S.elems
                                         =<< (   lift
                                             $   maybeToList
@@ -269,9 +270,10 @@ moveHelper _ a b
 -- External API
 --------------------------------------------------------------------------------
 
-generate :: D.GadgetLibrary -> StdGen -> PredicateProgram -> Maybe [Metadata]
+generate :: D.GadgetLibrary -> StdGen -> PredicateProgram -> Maybe B.ByteString
 generate library gen program = 
         listToMaybe -- If there are any solutions return Just the first
+    $   map B.concat
     $   map rights -- Turn the Either values into Meta lists
     $   filter (null . lefts) -- Remove solutions with hanging jumps
     $   map (replaceAllJumpHolders . snd) -- Turn solutions into [Either Meta Jump]
@@ -282,28 +284,28 @@ generate library gen program =
         -- generatedCode. Because a jumpHolder may be replaced by several
         -- instructions it is necessary to return a list of lists and then
         -- concat the results.
-        replaceAllJumpHolders :: CodeGenState -> [Either JumpHolder Metadata]
+        replaceAllJumpHolders :: CodeGenState -> [Either JumpHolder B.ByteString]
         replaceAllJumpHolders CodeGenState{..} = 
             let
                 jumpReplacers   = map ((uncurry $ replaceJumpHolders locationPool)) $ M.assocs predicateToByte
-                replacedCode    = foldrM (\j c -> liftM concat $ mapM j c) generatedCode jumpReplacers
+                replacedCode    = foldrM mapM generatedCode jumpReplacers
             in
-                fst $ sampleState (replacedCode :: RVar [Either JumpHolder Metadata]) randomGenerator
+                fst $ sampleState (replacedCode :: RVar [Either JumpHolder B.ByteString]) randomGenerator
 
-        replaceJumpHolders :: LocationPool -> Integer -> Integer -> Either JumpHolder Metadata -> RVar [Either JumpHolder Metadata]
+        replaceJumpHolders :: LocationPool -> Integer -> Integer -> Either JumpHolder B.ByteString -> RVar (Either JumpHolder B.ByteString)
         replaceJumpHolders locationPool predIndex byteOffset j@(Left (JumpHolder {..}))
             | predIndex == target   = do
                 let jumpGarbageSize         = if target <= 0 then length else 0
-                let gadgets                 = filter ((length==) . foldr' (+) 0 . map (fromIntegral . mdLength) . fst)
+                let gadgets                 = filter ((length==) . fromIntegral . B.length . fst)
                                                 $ concatMap S.toList
                                                 $ maybeToList
                                                 $ D.libraryLookup (jumpFlavor (byteOffset-jumpOffset-jumpGarbageSize)) library
                 shuffled                    <- shuffle gadgets
                 case listToMaybe $ filter (doesNotClobber locationPool) $ shuffled of --shuffled
-                    Nothing         -> return [j]
-                    Just (meta,_)   -> return $ map Right meta
-            | otherwise             = return [j]
-        replaceJumpHolders _ _ _ meta = return [meta]
+                    Nothing         -> return j
+                    Just (meta,_)   -> return $ Right meta
+            | otherwise             = return j
+        replaceJumpHolders _ _ _ meta = return meta
 
 -- | Create a variable for use with the predicate functions.
 makeVariable :: Predicate Variable
@@ -366,9 +368,9 @@ makePredicate :: [[G.Gadget]] -> Predicate ()
 makePredicate allGadgetStreams = do
     state@(CodeGenState{..})    <- get
     gadgetStream                <- lift allGadgetStreams -- grab a sequence of gadgets that do what we want
-    metaStream                  <- liftM concat $ mapM translateGadget gadgetStream -- translate all of the gadgets to instructions
+    metaStream                  <- mapM translateGadget gadgetStream -- translate all of the gadgets to instructions
     byteIndex                   <- lift $ maybeToList $ M.lookup currentPredicate predicateToByte
-    let nextByteIndex           = byteIndex + (foldr' (+) 0 $ map (fromIntegral . mdLength) metaStream)
+    let nextByteIndex           = byteIndex + (foldr' (+) 0 $ map (fromIntegral . B.length) metaStream)
     let newCode                 = generatedCode ++ (map Right metaStream)
     put $! state{
             generatedCode       = newCode
@@ -381,7 +383,7 @@ makePredicate allGadgetStreams = do
         -- removes from the location pool any location that is defined by the
         -- gadget. This prevents a sequence of gadgets from clobbering
         -- intermediate values.
-        translateGadget :: G.Gadget -> Predicate [Metadata]
+        translateGadget :: G.Gadget -> Predicate B.ByteString
         translateGadget gadget = do
             state@(CodeGenState{..})    <- get
             gadgetSet                   <- lift $ maybeToList $ D.libraryLookup gadget library

@@ -44,7 +44,7 @@ import              System.Random
 
 -- | A collection of sequences of bytecodes that correspond to specific gadgets.
 newtype GadgetLibrary = GadgetLibrary {
-        gadgetMap   :: M.Map G.Gadget (S.Set ([Metadata], G.ClobberList))
+        gadgetMap   :: M.Map G.Gadget (S.Set (B.ByteString, G.ClobberList))
     }
     deriving (Eq,Ord,Show,Read)
 $( derive makeNFData ''GadgetLibrary )
@@ -53,22 +53,21 @@ instance Binary GadgetLibrary where
     put library@GadgetLibrary{..} = do
         let metadataSet     =   S.toList
                             $   S.unions 
-                            $   S.toList 
-                            $   S.map S.fromList 
-                            $   S.unions 
-                            $   map (S.map $ fst) 
+                            -- $   S.toList 
+                            -- $   S.map S.fromList 
+                            -- $   S.unions 
+                            $   map (S.map fst) 
                             $   M.elems gadgetMap
         let metadataToInt   = metadataSet `deepseq` M.fromList $ zip metadataSet [1::Int ..] 
-        let intToBytes      = metadataToInt `deepseq` M.fromList $ map (\(i,m) -> (i,mdBytes m)) $ map swap $ M.assocs metadataToInt
-        let libraryWithInts = intToBytes `deepseq` M.map (S.map (\(m,c) -> (map (metadataToInt M.!) m,c))) gadgetMap
+        let intToBytes      = metadataToInt `deepseq` M.fromList $ map swap $ M.assocs metadataToInt
+        let libraryWithInts = intToBytes `deepseq` M.map (S.map (\(m,c) -> (metadataToInt M.! m,c))) gadgetMap
         put $!! intToBytes
         put $!! libraryWithInts
 
     get = do
-        intToBytes          <- get :: Get (M.Map Int B.ByteString)
-        let intToMetadata   = M.map (head . disassembleMetadata hdisConfig) intToBytes
-        libraryWithInts     <- intToMetadata `deepseq` get
-        let library         = libraryWithInts `deepseq` M.map (S.map (\(m,c) -> (map (intToMetadata M.!) m,c))) libraryWithInts
+        !intToBytes          <- get :: Get (M.Map Int B.ByteString)
+        !libraryWithInts     <- intToBytes `deepseq` get
+        let library         = libraryWithInts `deepseq` M.map (S.map (\(m,c) -> (intToBytes M.! m,c))) libraryWithInts
         return $ GadgetLibrary $!! library :: Get GadgetLibrary
 
 --------------------------------------------------------------------------------
@@ -98,17 +97,17 @@ emptyLibrary = GadgetLibrary {
 
 -- | Wraps the look up function, and handles certain cases that may not be in
 -- the library but can map to noops, like moving a register ontop of itself.
-libraryLookup :: G.Gadget -> GadgetLibrary -> Maybe (S.Set ([Metadata], G.ClobberList))
+libraryLookup :: G.Gadget -> GadgetLibrary -> Maybe (S.Set (B.ByteString, G.ClobberList))
 libraryLookup g@(G.LoadReg a b) library@GadgetLibrary{..}
-    | a == b            = return $ S.singleton ([],[])
+    | a == b            = return $ S.singleton (B.empty,[])
     | otherwise         = M.lookup g gadgetMap
 libraryLookup g library@GadgetLibrary{..}   = M.lookup g gadgetMap
 
 libraryMerge :: GadgetLibrary -> GadgetLibrary -> GadgetLibrary
 libraryMerge a b = GadgetLibrary $ M.unionWith S.union (gadgetMap a) (gadgetMap b)
 
-libraryInsert :: G.Gadget -> ([Metadata], G.ClobberList) -> GadgetLibrary -> GadgetLibrary
-libraryInsert gadget value library = GadgetLibrary $! M.insertWith S.union gadget (S.singleton value) $ gadgetMap library
+libraryInsert :: G.Gadget -> (B.ByteString, G.ClobberList) -> GadgetLibrary -> GadgetLibrary
+libraryInsert !gadget !value !library = GadgetLibrary $! M.insertWith S.union gadget (S.singleton value) $ gadgetMap library
 
 -- | Given a target size and an instruction 'Metadata' 'Generator', builds a
 -- library of gadgets of that is at least as large as the target size.
@@ -134,8 +133,8 @@ discoverMore targetIncrease !generator gen library =  fst $ sampleState (discove
 
         -- Turn an instruction stream into a list of key value pairs for the
         -- gadget library
-        process :: [Metadata] -> [(G.Gadget,([Metadata],G.ClobberList))]
+        process :: [Metadata] -> [(G.Gadget,(B.ByteString,G.ClobberList))]
         process stream = do
             (gadget, clobber) <- concat $ maybeToList $ eval stream >>= return . G.match
-            return (gadget, (stream,clobber))
+            return (gadget, (B.concat $ map mdBytes stream,clobber))
 

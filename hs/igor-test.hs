@@ -1,5 +1,6 @@
 import              Data.Binary
 import              Igor.CodeGen
+import              Igor.ByteModel (hdisConfig)
 import              Igor.Gadget.Discovery
 import              Hdis86
 import              System.Random
@@ -11,10 +12,13 @@ main = do
     putStrLn "Generating code..."
     gen     <- newStdGen
     case generate library gen testProgram of
-        Nothing         -> putStrLn "Could not generate :("
-        Just metaList   -> do
-            sequence_ $ map printMeta metaList
+        Nothing     -> putStrLn "Could not generate :("
+        Just result -> printBS result
     where
+        printBS bs  = do
+            let metaList    =  disassembleMetadata hdisConfig bs
+            sequence_ $ map printMeta metaList
+            
         printMeta m = do
             putStr $ show $ mdLength m
             putStr "\t:\t"

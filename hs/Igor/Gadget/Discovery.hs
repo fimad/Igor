@@ -37,6 +37,7 @@ import              Igor.Binary
 import              Igor.ByteModel
 import              Igor.Eval
 import qualified    Igor.Gadget             as G
+import              Hdis86.Pure
 import              Hdis86.Types
 import              System.Mem
 import              System.Random
@@ -58,15 +59,16 @@ instance Binary GadgetLibrary where
                             $   map (S.map $ fst) 
                             $   M.elems gadgetMap
         let metadataToInt   = metadataSet `deepseq` M.fromList $ zip metadataSet [1::Int ..] 
-        let intToMetadata   = metadataToInt `deepseq` M.fromList $ map swap $ M.assocs metadataToInt
-        let libraryWithInts = intToMetadata `deepseq` M.map (S.map (\(m,c) -> (map (metadataToInt M.!) m,c))) gadgetMap
-        put $!! intToMetadata
+        let intToBytes      = metadataToInt `deepseq` M.fromList $ map (\(i,m) -> (i,mdBytes m)) $ map swap $ M.assocs metadataToInt
+        let libraryWithInts = intToBytes `deepseq` M.map (S.map (\(m,c) -> (map (metadataToInt M.!) m,c))) gadgetMap
+        put $!! intToBytes
         put $!! libraryWithInts
 
     get = do
-        intToMetadata   <- get :: Get (M.Map Int Metadata)
-        libraryWithInts <- intToMetadata `deepseq` get
-        let library     = libraryWithInts `deepseq` M.map (S.map (\(m,c) -> (map (intToMetadata M.!) m,c))) libraryWithInts
+        intToBytes          <- get :: Get (M.Map Int B.ByteString)
+        let intToMetadata   = M.map (head . disassembleMetadata hdisConfig) intToBytes
+        libraryWithInts     <- intToMetadata `deepseq` get
+        let library         = libraryWithInts `deepseq` M.map (S.map (\(m,c) -> (map (intToMetadata M.!) m,c))) libraryWithInts
         return $ GadgetLibrary $!! library :: Get GadgetLibrary
 
 --------------------------------------------------------------------------------

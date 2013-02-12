@@ -5,6 +5,7 @@ module Igor.ByteModel
   Generator
 , Model
 -- * Methods
+, hdisConfig
 , uniform
 , generate
 ) where
@@ -29,6 +30,8 @@ type Model     = RVar B.ByteString
 -- | A generator will generate a list of instruction 'Metadata'.
 type Generator = RVar [Metadata]
 
+hdisConfig = intel32 {cfgCPUMode = Mode32, cfgSyntax = SyntaxIntel}
+
 -- | Generates a random list of bytes from the uniform distribution.
 -- TODO: Implement an actual model...
 uniform :: Int -> Model
@@ -50,7 +53,7 @@ generate :: Model -> Generator
 generate !model = do
     words       <- model
     -- attempt to disassemble them
-    let !result  = disassembleMetadata (intel32 {cfgCPUMode = Mode32, cfgSyntax = SyntaxIntel}) $ words 
+    let !result  = disassembleMetadata hdisConfig $ words 
     -- if successful return the instruction list, otherwise try again
     case result of
         []        -> generate model

@@ -106,16 +106,16 @@ libraryInsert !gadget !(value,clobber) !library = GadgetLibrary
 
 -- | Given a target size and an instruction 'Metadata' 'Generator', builds a
 -- library of gadgets of that is at least as large as the target size.
-discover :: Int -> Generator -> StdGen -> GadgetLibrary
-discover targetSize generator gen = discoverMore targetSize generator gen emptyLibrary
+discover :: Int -> Generator -> IO GadgetLibrary
+discover targetSize generator = discoverMore targetSize generator emptyLibrary
 
-discoverMore :: Int -> Generator -> StdGen -> GadgetLibrary -> GadgetLibrary
-discoverMore targetIncrease !generator gen library =  fst $ sampleState (discover' library) gen
+discoverMore :: Int -> Generator -> GadgetLibrary -> IO GadgetLibrary
+discoverMore targetIncrease !generator library =  discover' library
     where
         targetSize = M.size (gadgetMap library) + targetIncrease
 
-        discover' :: GadgetLibrary -> RVar GadgetLibrary
-        discover' library =
+        discover' :: GadgetLibrary -> IO GadgetLibrary
+        discover' !library =
             if M.size (gadgetMap library) >= targetSize
                 then do
                     return library

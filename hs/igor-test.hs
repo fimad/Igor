@@ -23,8 +23,6 @@ main = do
         printMeta m = do
             putStr $ show $ mdLength m
             putStr "\t:\t"
-            putStr $ show $ mdHex m
-            putStr "\t:\t"
             putStrLn $ mdAssembly m
 
 testProgram :: PredicateProgram
@@ -32,14 +30,9 @@ testProgram = do
     [v1,v2,v3]  <- makeVariables 3
     [start,end] <- makeLabels 2
     label start
-    jump start always
-    jump start always
-    jump start always
-    jump start always
-    jump end always
-    jump end always
-    jump end always
-    jump end always
+    add v2 v2 v2
+    sub v1 v1 v2
+    jump start (v1 ->- v3)
     label end
 --    move v1 v2
 --    move v2 v3

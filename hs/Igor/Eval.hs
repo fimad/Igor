@@ -100,10 +100,10 @@ clobbersFlags state = M.insert (RegisterLocation EFLAG) (Clobbered) state
 -- | Marks the flags register as containing the result of a comparison
 compareExpr :: State -> [H.Operand] -> Maybe State
 compareExpr state operands = do
-    dst         <- listToMaybe $ operands
-    src         <- listToMaybe $ drop 1 $ operands
-    srcValue    <- operandToExpression src state
-    dstValue    <- operandToExpression dst state
+    dst                                             <- listToMaybe $ operands
+    src                                             <- listToMaybe $ drop 1 $ operands
+    srcValue@(InitialValue (RegisterLocation _))    <- operandToExpression src state
+    dstValue@(InitialValue (RegisterLocation _))    <- operandToExpression dst state
     return $! M.insert (RegisterLocation EFLAG) (Comparison dstValue srcValue) state
 
 buildJump :: State -> Int32 -> (Value -> Expression) -> [H.Operand] -> Maybe (State, Bool)

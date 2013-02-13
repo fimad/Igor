@@ -30,7 +30,7 @@ type Model     = RVar B.ByteString
 -- | A generator will generate a list of instruction 'Metadata'.
 type Generator = RVar [Metadata]
 
-hdisConfig = intel32 {cfgCPUMode = Mode32, cfgSyntax = SyntaxIntel}
+hdisConfig = intel32 {cfgSyntax = SyntaxIntel}
 
 -- | Generates a random list of bytes from the uniform distribution.
 -- TODO: Implement an actual model...

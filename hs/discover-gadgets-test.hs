@@ -32,4 +32,6 @@ main = do
         printMeta m = do
             putStr $ show $ mdLength m
             putStr "\t:\t"
+            putStr $ show $ mdHex m
+            putStr "\t:\t"
             putStrLn $ mdAssembly m

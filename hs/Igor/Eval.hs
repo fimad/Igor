@@ -112,7 +112,7 @@ buildJump state size expr operands = do
     (Constant srcValue) <- operandToExpression src state
     case valueOf (Just $ RegisterLocation EIP) state of
         Just (InitialValue (RegisterLocation EIP))  -> return 
-                                                    $ (M.insert (RegisterLocation EIP) (expr $ srcValue + size) state, True)
+                                                    $ (M.insert (RegisterLocation EIP) (expr $ srcValue) state, True)
         _                                           -> Nothing
 
 --------------------------------------------------------------------------------

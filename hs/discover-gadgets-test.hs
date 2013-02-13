@@ -10,9 +10,8 @@ import              System.Random
 
 main :: IO ()
 main = do
-    gen             <- newStdGen
     let generator   = generate $ uniform 16
-    let library  = discover 10000 generator gen
+    library         <- discover 10000 generator
     sequence_ $ map prettyPrint $ M.toList $ gadgetMap library
 
     where

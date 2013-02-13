@@ -60,14 +60,6 @@ import              System.Random
 --
 --      - This will also likely cause clobber conflicts with variables in the
 --      registers so will likely depend on moving variables to memory.
---
--- 2) Conditionals
---      - This is fairly trivial compared to the previous milestones. This
---      involves the addition of flag locations and modifying the expression
---      datatype to include conditionals, and the eval function to add flag
---      modifications to the opcodes that need it along with the 'cmp' opcode
---      and the various conditional branch instructions. Likely all straight
---      forward but it will take a possibly substantial amount of code.
 
 -- | Variables are the type passed to the user of the library and currently the
 -- arguments to the predicate functions. This may change in the future for when

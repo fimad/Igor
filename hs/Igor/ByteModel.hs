@@ -14,12 +14,14 @@ module Igor.ByteModel
 , generate
 ) where
 
-import              Control.DeepSeq
 import              Control.Applicative
+import              Control.DeepSeq
+import              Control.Monad
 import              Codec.Compression.GZip
 import qualified    Data.ByteString                     as B
 import qualified    Data.Foldable                       as F
 import qualified    Data.Map                            as M
+import              Data.Ratio
 import              Data.Random.Distribution
 import qualified    Data.Random.Distribution.Uniform    as U
 import              Data.Random.RVar
@@ -45,14 +47,17 @@ type Generator = IO [Metadata]
 
 -- | A distribution from a sample
 data SampledDistribution a = SampledDistribution {
-    frequencies :: M.Map a Double -- The normalized frequencies for each value of type
+    -- Maybe use ratios instead of doubles here so that we can "guarantee" that
+    -- they actually sum up to 1. Looks like the toRational function can take a
+    -- double and make it the nearest rational, yay!!
+    frequencies :: M.Map a Rational -- The normalized frequencies for each value of type
 }
 
 type ByteDistribution = SampledDistribution Word8
 
 instance Distribution SampledDistribution a where
     rvarT dist    = do
-        sample <- getRandomDouble
+        sample <- liftM toRational $ getRandomDouble
         return $
             ( fst 
             . head

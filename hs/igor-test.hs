@@ -5,16 +5,24 @@ import              Igor.ByteModel (hdisConfig)
 import              Igor.Gadget.Discovery
 import              Hdis86
 import              System.Random
+import              System.Environment
 
 main :: IO ()
 main = do
-    putStrLn "Loading library..."
-    library <- load "library"
-    putStrLn "Generating code..."
-    gen     <- newStdGen
-    case generate library gen testProgram of
-        Nothing     -> putStrLn "Could not generate :("
-        Just result -> printBS result
+    args        <- getArgs
+    progName    <- getProgName
+    case args of
+        [libraryFile]   -> do
+            putStrLn "Loading library..."
+            library <- load "library"
+            putStrLn "Generating code..."
+            gen     <- newStdGen
+            case generate library gen testProgram of
+                Nothing     -> putStrLn "Could not generate :("
+                Just result -> printBS result
+
+        _               -> putStrLn $ concat $ [progName, ": libraryFile"]
+
     where
         printBS bs  = do
             let metaList    =  disassembleMetadata hdisConfig bs

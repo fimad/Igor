@@ -13,6 +13,7 @@ import              Filesystem.Enumerator
 import qualified    Filesystem.Path             as P
 import qualified    Filesystem.Path.CurrentOS   as OS
 import              Igor.ByteModel
+import              System.Environment
 
 type ByteCount = M.Map Word8 Integer
 
@@ -26,6 +27,7 @@ builder !dist = do
     where
         process :: P.FilePath -> ByteCount -> IO ByteCount
         process path !dist = do
+            putStrLn $ show path
             !dist   <- (B.readFile $ OS.encodeString path)
                     >>= return . B.foldr' (M.update (\a -> let b = a+1 in b `seq` Just b)) dist
             return dist
@@ -34,10 +36,15 @@ initialCounts = M.fromList $ zip [minBound .. maxBound] (Prelude.repeat 0)
 
 main :: IO ()
 main = do
-    let enum            = traverse True (fromString "./")
-    byteCount           <- run_ $ builder initialCounts >>== enum
-    let total           = sum $ M.elems byteCount
-    let byteDist        = SampledDistribution $ M.map (% total) byteCount
-    sequence_ $ Prelude.map (putStrLn . show) $ M.assocs $ frequencies byteDist
-    encodeFile "byte-dist" $ frequencies byteDist
-    return ()
+    args    <- getArgs
+    case args of
+        [file, path]    -> do
+            let enum            = traverse True (fromString path)
+            byteCount           <- run_ $ builder initialCounts >>== enum
+            let total           = sum $ M.elems byteCount
+            let byteDist        = SampledDistribution $ M.map (% total) byteCount
+            sequence_ $ Prelude.map (putStrLn . show) $ M.assocs $ frequencies byteDist
+            encodeFile file byteDist
+        _               ->
+            putStrLn "Usage: build-byte-dist byteFile path/to/crawl"
+

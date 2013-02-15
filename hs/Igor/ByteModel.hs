@@ -1,16 +1,18 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE RecordWildCards #-}
 module Igor.ByteModel
 ( 
 -- * Types
   Generator
-, Model
+, Source
 , SampledDistribution (..)
 , ByteDistribution (..)
 -- * Methods
 , hdisConfig
 , uniform
+, fromDistribution
 , generate
 ) where
 
@@ -19,6 +21,7 @@ import              Control.DeepSeq
 import              Control.Monad
 import              Codec.Compression.GZip
 import qualified    Data.ByteString                     as B
+import              Data.Binary
 import qualified    Data.Foldable                       as F
 import qualified    Data.Map                            as M
 import              Data.Ratio
@@ -40,7 +43,7 @@ import              System.Random
 
 -- | A model randomly generates a finite list of bytes according to a given byte
 -- distribution.
-type Model     = IO B.ByteString
+type Source     = IO B.ByteString
 
 -- | A generator will generate a list of instruction 'Metadata'.
 type Generator = IO [Metadata]
@@ -61,27 +64,32 @@ instance Distribution SampledDistribution a where
         return $
             ( fst 
             . head
-            . dropWhile ((sample>). snd)
-            . scanr (\a -> (,) <$> fst <*> (snd a+).snd) (undefined,0)
+            . dropWhile ((sample>=). snd)
+            . scanl (\a -> (,) <$> fst <*> (snd a+).snd) (undefined,0)
             . M.assocs
             . frequencies
             ) dist
 
+instance (Binary a, Ord a) => Binary (SampledDistribution a) where
+    put library@SampledDistribution{..} = put frequencies
+
+    get = get >>= return . SampledDistribution
+
 --------------------------------------------------------------------------------
--- Models for sampling bytecode
+-- Sources for sampling bytecode
 --------------------------------------------------------------------------------
 
 -- | Generates a random list of bytes from the uniform distribution.
 -- TODO: Implement an actual model...
-uniform :: Int -> Model
+uniform :: Int -> Source
 uniform numBytes = do
     let model       = U.stdUniform
     gen             <- newStdGen
     let !(result,_)  = sampleState (sequence $ replicate numBytes model) gen
     return $! B.pack (result :: [Word8])
 
-fromDistribution :: ByteDistribution -> Int -> Model 
-fromDistribution byteDist numBytes = do
+fromDistribution :: Int -> ByteDistribution -> Source 
+fromDistribution numBytes byteDist = do
     gen             <- newStdGen
     let !(result,_)  = sampleState (sequence $ replicate numBytes $ rvar byteDist) gen
     return $! B.pack (result :: [Word8])
@@ -101,7 +109,7 @@ disassembleMetadata' config bytestring = reverse $! disas bytestring []
 
 -- | Generates a random instruction stream based on the model function that is
 -- passed in.
-generate :: Model -> Generator
+generate :: Source -> Generator
 generate !model = do
     !words       <- model
     -- attempt to disassemble them

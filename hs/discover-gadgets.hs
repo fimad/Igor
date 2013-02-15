@@ -11,21 +11,30 @@ main = do
     args        <- getArgs
     progName    <- getProgName
     case args of
-        [file] -> do
-            fileExists      <- doesFileExist file
-            existingLibrary <- if fileExists
-                                    then do
-                                        putStrLn "Reading existing library..."
-                                        load file
-                                    else
-                                        return emptyLibrary
-            putStrLn "Looking for gadgets..."
-            let generator   = generate $ uniform 16
---            let newLibrary  = foldr1 merge $ map ($ generator) $ replicate 10 $ discover gen 10000
-            newLibrary      <- discoverMore 10000 generator existingLibrary
-            putStrLn "Working..."
-            save file newLibrary
-            putStrLn "Done!"
-        _      ->
-            putStrLn $ concat $ ["Usage: ", progName, " gadgetLibraryFile"]
+        [file,"uniform"]        -> doDiscover file $ uniform 16
 
+        [file,"dist",distFile]  ->  decodeFile distFile 
+                                >>= return . (fromDistribution 16)
+                                >>= doDiscover file
+
+        _                       ->
+            putStrLn $ concat $ [
+                    "Usage: ", progName, " gadgetLibraryFile uniform\n"
+                ,   "       ", progName, " gadgetLibraryFile dist distributionFile"
+                ]
+
+doDiscover :: FilePath -> Source -> IO ()
+doDiscover file source = do
+    let generator   = generate source
+    fileExists      <- doesFileExist file
+    existingLibrary <- if fileExists
+                            then do
+                                putStrLn "Reading existing library..."
+                                load file
+                            else
+                                return emptyLibrary
+    putStrLn "Looking for gadgets..."
+    newLibrary      <- discoverMore 10000 generator existingLibrary
+    putStrLn "Working..."
+    save file newLibrary
+    putStrLn "Done!"

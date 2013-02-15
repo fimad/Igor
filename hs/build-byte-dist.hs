@@ -50,7 +50,10 @@ main = do
             let enum            = traverse True (fromString path)
             byteCount           <- run_ $ builder initialCounts >>== enum
             let total           = sum $ M.elems byteCount
-            let byteDist        = SampledDistribution $ M.map (% total) byteCount
+            let byteDist        = SampledDistribution { 
+                    frequencies = M.map (% total) byteCount
+                ,   total = total
+                }
             --sequence_ $ Prelude.map (putStrLn . show) $ M.assocs $ frequencies byteDist
             putStrLn "Done!"
             encodeFile file byteDist

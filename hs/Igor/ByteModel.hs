@@ -50,10 +50,11 @@ type Generator = IO [Metadata]
 
 -- | A distribution from a sample
 data SampledDistribution a = SampledDistribution {
-    -- Maybe use ratios instead of doubles here so that we can "guarantee" that
-    -- they actually sum up to 1. Looks like the toRational function can take a
-    -- double and make it the nearest rational, yay!!
-    frequencies :: M.Map a Rational -- The normalized frequencies for each value of type
+        -- Maybe use ratios instead of doubles here so that we can "guarantee" that
+        -- they actually sum up to 1. Looks like the toRational function can take a
+        -- double and make it the nearest rational, yay!!
+        frequencies :: M.Map a Rational -- The normalized frequencies for each value of type
+    ,   total       :: Integer -- Used when merging Samples
 }
 
 type ByteDistribution = SampledDistribution Word8
@@ -71,9 +72,17 @@ instance Distribution SampledDistribution a where
             ) dist
 
 instance (Binary a, Ord a) => Binary (SampledDistribution a) where
-    put library@SampledDistribution{..} = put frequencies
+    put library@SampledDistribution{..} = do
+        put total
+        put frequencies
 
-    get = get >>= return . SampledDistribution
+    get = do
+        total       <- get
+        frequencies <- get
+        return $ SampledDistribution {
+                frequencies = frequencies
+            ,   total       = total
+            }
 
 --------------------------------------------------------------------------------
 -- Sources for sampling bytecode

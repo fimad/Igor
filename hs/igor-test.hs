@@ -14,7 +14,7 @@ main = do
     case args of
         [libraryFile]   -> do
             putStrLn "Loading library..."
-            library <- load "library"
+            library <- load libraryFile
             putStrLn "Generating code..."
             gen     <- newStdGen
             case generate library gen testProgram of

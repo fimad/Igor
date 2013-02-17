@@ -163,7 +163,7 @@ eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Isub})     
     state'      <- compareExpr state (H.inOperands instruction)
     buildExpr2 state' Minus (H.inOperands instruction)
 
-eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ishr})     = do
+eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Isar})     = do
     let state'  = clobbersFlags state
     buildExpr2 state' RightShift (H.inOperands instruction)
 

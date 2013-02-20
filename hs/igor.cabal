@@ -37,6 +37,7 @@ Library
         ,   directory               >= 1.1.0.2
         ,   derive                  >= 2.5.11
         ,   hdis86                  >= 0.2
+        ,   IntervalMap             >= 0.3
         ,   mtl                     >= 2.0.1
         ,   random                  >= 1.0.1.1
         ,   random-fu               >= 0.2.4

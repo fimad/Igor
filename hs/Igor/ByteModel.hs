@@ -55,6 +55,7 @@ data SampledDistribution a = SampledDistribution {
         -- double and make it the nearest rational, yay!!
         frequencies :: M.Map a Rational -- The normalized frequencies for each value of type
     ,   total       :: Integer -- Used when merging Samples
+--    ,   cdfMap      :: IM.IntervalMap Rational a
 }
 
 type ByteDistribution = SampledDistribution Word8

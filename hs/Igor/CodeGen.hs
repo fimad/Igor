@@ -166,7 +166,7 @@ set var value = do
             ]
 
         numBits             = ceiling $ logBase 2 (fromIntegral value+1)
-        shiftSize           = 32 - numBits
+        shiftSize           = 31 - numBits
 
         getConstant :: G.Gadget -> Maybe (G.Gadget, X.Location)
         getConstant g@(G.LoadConst reg val)

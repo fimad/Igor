@@ -75,7 +75,7 @@ data Expression = InitialValue Location
                 | Constant Value
                 | Plus Expression Expression
                 | Minus Expression Expression
-                | RightShift Expression Expression -- ^ Corresponds to a right logical shift
+                | RightShift Expression Expression -- ^ Corresponds to a right arithmetic shift
                 -- | An expression that sets the flag bits of the source to be
                 -- the result of comparing the two locations.
                 | Comparison Expression Expression 

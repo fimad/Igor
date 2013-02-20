@@ -19,6 +19,7 @@ module Igor.CodeGen
 , sub
 , jump
 , noop
+, set
 -- *** Jump Reasons
 , (-<-)
 , (-<=-)
@@ -30,6 +31,7 @@ module Igor.CodeGen
 ) where
 
 import              Control.Monad.State
+import              Data.Bits
 import qualified    Data.ByteString         as B
 import              Data.Either
 import              Data.Function
@@ -139,6 +141,45 @@ move :: Variable -> Variable -> Predicate ()
 move a b = do
     CodeGenState{..} <- get
     makePredicate2 (moveHelper locationPool) a b
+
+-- | Loads a constant into a variable
+set :: Variable -> Integer -> Predicate ()
+set var value = do
+    CodeGenState{..}            <- get
+    let gmap                    = D.gadgetMap library
+    let constantGadgets         = mapMaybe getConstant $ M.keys gmap
+    let shiftGadgets            = mapMaybe getShift $ M.keys gmap
+    makePredicate1 (set' locationPool constantGadgets shiftGadgets) var
+
+    where
+        set' pool constants shifts var = 
+            [ 
+                    constantGadget
+                :   moveShift
+                ++  shiftGadget
+                :   moveVar
+            | 
+                    (constantGadget,cLoc)   <- constants
+                ,   (shiftGadget,sLoc)      <- shifts
+                ,   moveShift               <- moveHelper pool sLoc cLoc 
+                ,   moveVar                 <- moveHelper pool var sLoc 
+            ]
+
+        numBits             = ceiling $ logBase 2 (fromIntegral value+1)
+        shiftSize           = 32 - numBits
+
+        getConstant :: G.Gadget -> Maybe (G.Gadget, X.Location)
+        getConstant g@(G.LoadConst reg val)
+            | shiftR val shiftSize == fromIntegral value    = Just (g, X.RegisterLocation reg)
+            | otherwise                                     = Nothing
+        getConstant _                                       = Nothing
+
+        getShift :: G.Gadget -> Maybe (G.Gadget, X.Location)
+        getShift g@(G.RightShift reg val)
+            | shiftSize == fromIntegral val     = Just (g, X.RegisterLocation reg)
+            | otherwise                         = Nothing
+        getShift _                              = Nothing
+
 
 sub :: Variable -> Variable -> Variable -> Predicate ()
 sub a b c = do

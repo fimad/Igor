@@ -29,7 +29,7 @@ data Gadget = NoOp
             | StoreMemReg X.Register X.Value X.Register
             | Plus X.Register (S.Set X.Register)
             | Minus X.Register X.Register X.Register
-            | RightShift X.Register Integer
+            | RightShift X.Register Integer -- arithmetic shift
             | Compare X.Register X.Register
             | Jump X.Reason Integer
     deriving (Ord, Eq, Show, Read)

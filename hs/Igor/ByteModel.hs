@@ -24,6 +24,8 @@ import qualified    Data.ByteString                     as B
 import              Data.Binary
 import qualified    Data.Foldable                       as F
 import qualified    Data.Map                            as M
+import qualified    Data.IntervalMap.Interval           as IV
+import qualified    Data.IntervalMap.Strict             as IM
 import              Data.Ratio
 import              Data.Random.Distribution
 import qualified    Data.Random.Distribution.Uniform    as U
@@ -55,7 +57,7 @@ data SampledDistribution a = SampledDistribution {
         -- double and make it the nearest rational, yay!!
         frequencies :: M.Map a Rational -- The normalized frequencies for each value of type
     ,   total       :: Integer -- Used when merging Samples
---    ,   cdfMap      :: IM.IntervalMap Rational a
+    ,   cdfMap      :: IM.IntervalMap Rational a
 }
 
 type ByteDistribution = SampledDistribution Word8
@@ -63,14 +65,9 @@ type ByteDistribution = SampledDistribution Word8
 instance Distribution SampledDistribution a where
     rvarT dist    = do
         sample <- liftM toRational $ getRandomDouble
-        return $
-            ( fst 
-            . head
-            . dropWhile ((sample>=). snd)
-            . scanl (\a -> (,) <$> fst <*> (snd a+).snd) (undefined,0)
-            . M.assocs
-            . frequencies
-            ) dist
+        return  $ snd
+                $ head
+                $ IM.containing (cdfMap dist) sample
 
 instance (Binary a, Ord a) => Binary (SampledDistribution a) where
     put library@SampledDistribution{..} = do
@@ -80,9 +77,17 @@ instance (Binary a, Ord a) => Binary (SampledDistribution a) where
     get = do
         total       <- get
         frequencies <- get
+        let cdfMap  = IM.fromList
+                    $ tail
+                    $ scanl ( \(int,_) (key,freq) ->
+                                (IM.ClosedInterval (IV.upperBound int) (IV.upperBound int+freq) , key)
+                            ) 
+                            (IM.ClosedInterval 0 0,undefined)
+                    $ M.assocs frequencies
         return $ SampledDistribution {
                 frequencies = frequencies
             ,   total       = total
+            ,   cdfMap      = cdfMap
             }
 
 --------------------------------------------------------------------------------

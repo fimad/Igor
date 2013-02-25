@@ -146,9 +146,10 @@ move a b = do
 set :: Variable -> Integer -> Predicate ()
 set var value = do
     CodeGenState{..}            <- get
+    let poolSet                 = S.fromList locationPool
     let gmap                    = D.gadgetMap library
-    let constantGadgets         = mapMaybe getConstant $ M.keys gmap
-    let shiftGadgets            = mapMaybe getShift $ M.keys gmap
+    let constantGadgets         = mapMaybe (getConstant poolSet) $ M.keys gmap
+    let shiftGadgets            = mapMaybe (getShift poolSet) $ M.keys gmap
     makePredicate1 (set' locationPool constantGadgets shiftGadgets) var
 
     where
@@ -168,17 +169,19 @@ set var value = do
         numBits             = ceiling $ logBase 2 (fromIntegral value+1)
         shiftSize           = 31 - numBits
 
-        getConstant :: G.Gadget -> Maybe (G.Gadget, X.Location)
-        getConstant g@(G.LoadConst reg val)
-            | shiftR val shiftSize == fromIntegral value    = Just (g, X.RegisterLocation reg)
-            | otherwise                                     = Nothing
-        getConstant _                                       = Nothing
+        getConstant :: S.Set X.Location -> G.Gadget -> Maybe (G.Gadget, X.Location)
+        getConstant poolSet g@(G.LoadConst reg val)
+            | not $ (X.RegisterLocation reg) `S.member` poolSet = Nothing
+            | shiftR val shiftSize == fromIntegral value        = Just (g, X.RegisterLocation reg)
+            | otherwise                                         = Nothing
+        getConstant _ _                                         = Nothing
 
-        getShift :: G.Gadget -> Maybe (G.Gadget, X.Location)
-        getShift g@(G.RightShift reg val)
-            | shiftSize == fromIntegral val     = Just (g, X.RegisterLocation reg)
-            | otherwise                         = Nothing
-        getShift _                              = Nothing
+        getShift :: S.Set X.Location -> G.Gadget -> Maybe (G.Gadget, X.Location)
+        getShift poolSet g@(G.RightShift reg val)
+            | not $ (X.RegisterLocation reg) `S.member` poolSet = Nothing
+            | shiftSize == fromIntegral val                     = Just (g, X.RegisterLocation reg)
+            | otherwise                                         = Nothing
+        getShift _ _                                            = Nothing
 
 
 sub :: Variable -> Variable -> Variable -> Predicate ()
@@ -425,12 +428,13 @@ generate library gen program =
                 let jumpGarbageSize         = if (predIndex-jumpIndex) <= 0
                                                 then jumpLength + (fromIntegral $ B.length jumpPrefix)
                                                 else 0
+                let jumpGadget              = (jumpFlavor (byteOffset - jumpByteOffset - jumpGarbageSize))
                 let gadgets                 = filter ((jumpLength==) . fromIntegral . B.length . fst)
                                                 $ concatMap S.toList
                                                 $ maybeToList
-                                                $ D.libraryLookup (jumpFlavor (byteOffset - jumpByteOffset - jumpGarbageSize)) library
+                                                $ D.libraryLookup jumpGadget library
                 shuffled                    <- shuffle gadgets
-                case listToMaybe $ filter (doesNotClobber locationPool) $ shuffled of --shuffled
+                case listToMaybe $ filter (doesNotClobber locationPool jumpGadget) $ shuffled of --shuffled
                     Nothing         -> return j
                     Just (meta,_)   -> return $ Right $ jumpPrefix `B.append` meta
             | otherwise             = return j
@@ -546,14 +550,17 @@ translateGadget gadget = do
             -- Remove any intermediate values from the location pool
         ,   locationPool    = newLocationPool
         }
-    meta                        <- lift $ map fst $ filter (doesNotClobber newLocationPool) $ shuffled
+    meta                        <- lift $ map fst $ filter (doesNotClobber newLocationPool gadget) $ shuffled
     return $! meta
 
    
 -- | Ensures that a gadget realization does not clobber locations that
 -- should not be clobbered.
-doesNotClobber locationPool (_,[])         = True
-doesNotClobber locationPool (_,clobber)    =
+doesNotClobber locationPool _            (_,[])         = True
+doesNotClobber locationPool (G.Jump _ _) (_,clobber)    = doesNotClobber' (locationPool) clobber
+doesNotClobber locationPool _            (_,clobber)    = doesNotClobber' ((X.RegisterLocation X.EFLAG):locationPool) clobber
+
+doesNotClobber' locationPool clobber =
     let
         clobberSet              = S.fromList clobber
         clobberAbleLocations    = S.fromList $ (X.RegisterLocation X.EFLAG):locationPool

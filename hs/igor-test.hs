@@ -41,8 +41,8 @@ testProgram = do
     set v1 0
     set v2 1
     set v3 10
---    add v1 v1 v2
---    jump start (v1 -<- v3)
+    add v1 v1 v2
+    jump start (v1 -<- v3)
     label end
 --    move v1 v2
 --    move v2 v3

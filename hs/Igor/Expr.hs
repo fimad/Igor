@@ -57,7 +57,7 @@ data Reason = Always
 -- | General purpose registers that can be used as variables or scratch
 -- space or what ever.
 generalRegisters :: [Register]
-generalRegisters = [EAX .. ESI]
+generalRegisters = [EAX, EBX, ECX, EDX, EDI, ESI]
 
 -- | These registers cannot be used as variables or scratch space, and should
 -- not be clobbered by junk code.

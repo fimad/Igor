@@ -58,20 +58,25 @@ match :: State -> [Match]
 match state = do
     (location,expression)   <- (M.assocs state)
     let allOtherExpressions = location `M.delete` state
-    guard $ not $ any isIllegalExpression $ M.elems allOtherExpressions
     (gadget,nonClobbered)   <- matchGadgets location expression
-    return (gadget, M.keys $ foldl (flip M.delete) state nonClobbered)
+    let clobbered           = M.keys $ foldl (flip M.delete) state nonClobbered
+    -- Ensure that we don't perform any bad reads or clobber any variable memory
+    -- location
+    guard $ all (not.  isIllegalExpression) $ M.elems allOtherExpressions
+    guard $ all (not.  isIllegalExpression) $ map (X.InitialValue) clobbered
+    return (gadget, clobbered)
     where
         -- | Make sure that no expression touches a memory location. If this is
         -- not done, it would be possible for a junk expression read from an out
         -- of bounds memory location causing a segfault. Certainly undesirable.
-        isIllegalExpression (X.InitialValue (X.MemoryLocation _ _)) = True
+        isIllegalExpression (X.InitialValue (X.RegisterLocation _)) = False
+        isIllegalExpression (X.Constant _)                          = False
         isIllegalExpression (X.Plus a b)                            = isIllegalExpression a || isIllegalExpression b
         isIllegalExpression (X.Minus a b)                           = isIllegalExpression a || isIllegalExpression b
         isIllegalExpression (X.RightShift a b)                      = isIllegalExpression a || isIllegalExpression b
         isIllegalExpression (X.Comparison a b)                      = isIllegalExpression a || isIllegalExpression b
         isIllegalExpression (X.Conditional _ a)                     = isIllegalExpression a
-        isIllegalExpression _                                       = False
+        isIllegalExpression _                                       = True
 
 -- | Create a list of all of the
 matchGadgets :: X.Location -- ^ The source of the current expression

@@ -1,6 +1,7 @@
 import              Data.Binary
 import qualified    Data.ByteString as B
 import              Igor.CodeGen
+import              Igor.CodeGen.GCC
 import              Igor.ByteModel (hdisConfig)
 import              Igor.Gadget.Discovery
 import              Hdis86
@@ -12,16 +13,20 @@ main = do
     args        <- getArgs
     progName    <- getProgName
     case args of
-        [libraryFile]   -> do
+        [libraryFile, output]   -> do
             putStrLn "Loading library..."
             library <- load libraryFile
             putStrLn "Generating code..."
-            gen     <- newStdGen
-            case generate library gen testProgram of
-                Nothing     -> putStrLn "Could not generate :("
-                Just result -> printBS result
+            result  <- compile library output [("test", testProgram)]
+            case result of
+                False   -> putStrLn "Could not generate :("
+                _       -> putStrLn $ "Written to "++output
+            --gen     <- newStdGen
+            --case generate library gen testProgram of
+            --    Nothing     -> putStrLn "Could not generate :("
+            --    Just result -> printBS $ byteCode result
 
-        _               -> putStrLn $ concat $ [progName, ": libraryFile"]
+        _                       -> putStrLn $ concat $ [progName, ": libraryFile output"]
 
     where
         printBS bs  = do
@@ -38,7 +43,8 @@ testProgram = do
     [v1]  <- makeVariables 1
     [start,end] <- makeLabels 2
     label start
-    set v1 0
+    set v1 47
+    ret v1
     label end
 --    move v1 v2
 --    move v2 v3

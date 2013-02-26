@@ -6,6 +6,7 @@ module Igor.CodeGen
 , CodeGenState
 , Predicate
 , PredicateProgram
+, GeneratedCode(..)
 -- * Methods
 , generate
 , makeLabel
@@ -20,6 +21,7 @@ module Igor.CodeGen
 , jump
 , noop
 , set
+, ret
 -- *** Jump Reasons
 , (-<-)
 , (-<=-)
@@ -49,20 +51,6 @@ import qualified    Igor.Gadget.Discovery   as D
 import              Hdis86
 import              System.Random
 
--- TODO:
---
--- 1) Constants
---      - Currently there is like a 0% likely hood that a needed constant will
---      be in the library. Therefore the set constant predicate (which also
---      needs to be made) needs to be able to generate predicates from what is
---      in the library. The most straight forward way I can think of doing this
---      is choosing a sufficiently small right shift and then combing the
---      available constants in the library for an appropriate one and then
---      combining the loadConst and RightShift gadgets.
---
---      - This will also likely cause clobber conflicts with variables in the
---      registers so will likely depend on moving variables to memory.
-
 -- | Variables are the type passed to the user of the library and currently the
 -- arguments to the predicate functions. This may change in the future for when
 -- constants are added.
@@ -83,6 +71,12 @@ type VariableMap        = M.Map Variable X.Location
 -- internal changes should not cause problems in user code.
 type PredicateProgram   = StateT CodeGenState [] ()
 type Predicate a        = StateT CodeGenState [] a
+
+-- | The result of compilation.
+data GeneratedCode       = GeneratedCode {
+        byteCode            :: B.ByteString
+    ,   localVariableSize   :: Integer
+}
 
 -- | The condition upon which the jump depends
 data JumpReason         = Always
@@ -111,6 +105,7 @@ data CodeGenState       = CodeGenState {
     ,   currentPredicate    :: Integer
     ,   predicateToByte     :: M.Map Integer Integer -- ^ Maps from predicate indices to byte indices
     ,   localVariableOffset :: Integer -- ^ How far from EBP should we assign the next local variable?
+    ,   endOfCodeLabel      :: Label -- ^ Marks the end of body. Used for jumping out to return.
     }
 
 initialState :: D.GadgetLibrary -> StdGen -> CodeGenState
@@ -124,6 +119,7 @@ initialState library gen = CodeGenState {
     ,   currentPredicate    = 0
     ,   predicateToByte     = M.insert 0 0 M.empty
     ,   localVariableOffset = 0
+    ,   endOfCodeLabel      = 1 -- ^ The end of code label will always be the first label made.
     }
     where
         pool                    = map X.RegisterLocation X.generalRegisters
@@ -135,12 +131,20 @@ initialState library gen = CodeGenState {
 --------------------------------------------------------------------------------
 
 noop :: Predicate ()
-noop = makePredicate [[G.NoOp]]
+noop = makePredicate $ inits $ repeat G.NoOp
 
 move :: Variable -> Variable -> Predicate ()
 move a b = do
     CodeGenState{..} <- get
     makePredicate2 (moveHelper locationPool) a b
+ 
+-- | Jumps to the end of a method and moves the given variable to EAX.
+ret :: Variable -> Predicate ()
+ret a = do
+    CodeGenState{..}    <- get
+    aLoc                <- varToLoc' a
+    let moveAToEAX = moveHelper locationPool (X.RegisterLocation X.EAX) aLoc
+    calculateJump moveAToEAX (G.Jump X.Always) endOfCodeLabel
 
 -- | Loads a constant into a variable
 set :: Variable -> Integer -> Predicate ()
@@ -170,12 +174,14 @@ set var value = do
                 ,   saveShiftLoc            <- (pool \\ [sLoc, cLoc, saveConstantLoc])
                 ,   pool'                   <- [pool \\ [sLoc, cLoc, saveConstantLoc, saveShiftLoc]]
                 ,   saveConstant            <- moveHelper pool' saveConstantLoc cLoc
-                ,   saveShift               <- moveHelper pool' saveShiftLoc sLoc
+                ,   saveShift               <- if sLoc == cLoc then [] else moveHelper pool' saveShiftLoc sLoc
                 -- If the variable is the same s the sLoc or cLoc then we don't
                 -- want to overwrite them by restoring their value prior to
                 -- computation
                 ,   restoreConstant         <- if var == cLoc then [] else moveHelper pool' cLoc saveConstantLoc
-                ,   restoreShift            <- if var == sLoc then [] else moveHelper pool' sLoc saveShiftLoc
+                ,   restoreShift            <- if var == sLoc || sLoc == cLoc
+                                                then []
+                                                else moveHelper pool' sLoc saveShiftLoc
                 ,   moveShift               <- moveHelper pool' sLoc cLoc 
                 ,   moveVar                 <- moveHelper pool' var sLoc 
             ]
@@ -253,15 +259,20 @@ jump :: Label -> Predicate JumpReason -> Predicate ()
 jump indexLabel reason = do
     reason' <- reason
     case reason' of
-        Always                  -> calculateJump [[]] (G.Jump X.Always) indexLabel
+        Always                  -> calculateJump (inits $ repeat G.NoOp) (G.Jump X.Always) indexLabel
         (Because reason a b)    -> do
             CodeGenState{..} <- get
             -- A list of list of gadgets that will compare the required
             -- locations
             let compare' = [ 
-                        moveA ++  moveB ++  [G.Compare aReg bReg] | 
-                        aLoc@(X.RegisterLocation aReg) <- a:locationPool
-                    ,   bLoc@(X.RegisterLocation bReg) <- (b:locationPool) \\ [aLoc]
+                        moveA ++  moveB ++  [G.Compare aReg bReg]
+                        --noops ++ moveA ++  moveB ++  [G.Compare aReg bReg]
+                    | 
+                        -- Include noops so to vary the length of the jump
+                        -- instruction
+                        --noops                           <- (inits $ repeat G.NoOp)
+                        aLoc@(X.RegisterLocation aReg)  <- a:locationPool
+                    ,   bLoc@(X.RegisterLocation bReg)  <- (b:locationPool) \\ [aLoc]
                     ,   moveA <- moveHelper locationPool aLoc a -- Move b into x
                     ,   moveB <- moveHelper locationPool bLoc b -- Move c into y
                     ]
@@ -414,15 +425,21 @@ moveHelper pool a@(X.MemoryLocation aReg aOffset) b@(X.MemoryLocation bReg bOffs
 -- External API
 --------------------------------------------------------------------------------
 
-generate :: D.GadgetLibrary -> StdGen -> PredicateProgram -> Maybe B.ByteString
-generate library gen program = 
-        listToMaybe -- If there are any solutions return Just the first
-    $   map B.concat
-    $   map rights -- Turn the Either values into Meta lists
-    $   filter (null . lefts) -- Remove solutions with hanging jumps
-    $   map (replaceAllJumpHolders . snd) -- Turn solutions into [Either Meta Jump]
-    $   runStateT program -- Create a really long list of solutions
-    $   initialState library gen 
+generate :: D.GadgetLibrary -> StdGen -> PredicateProgram -> Maybe GeneratedCode
+generate library gen program = listToMaybe $ do
+    let program'    = do
+        eoc <- makeLabel
+        program
+        label eoc
+    (_,solution)    <- runStateT program' $ initialState library gen
+    let eitherCode  = replaceAllJumpHolders solution -- Turn solution into [Either Meta Jump]
+    let byteCode    = B.concat $ rights eitherCode -- Turn the Either values into Meta lists and concats
+    -- Remove solutions with hanging jumps
+    guard $ (null . lefts) eitherCode
+    return GeneratedCode {
+            byteCode            = byteCode
+        ,   localVariableSize   = localVariableOffset solution
+    }
     where
         -- | Attempts to replace forward jump statements for a given element in
         -- generatedCode. Because a jumpHolder may be replaced by several
@@ -439,9 +456,10 @@ generate library gen program =
         replaceJumpHolders :: CodeGenState -> Integer -> Integer -> Either JumpHolder B.ByteString -> RVar (Either JumpHolder B.ByteString)
         replaceJumpHolders state@CodeGenState{..} predIndex byteOffset j@(Left (JumpHolder {..}))
             | predIndex == labelToIndex state jumpTarget   = do
-                let jumpGarbageSize         = if (predIndex-jumpIndex) <= 0
-                                                then jumpLength + (fromIntegral $ B.length jumpPrefix)
-                                                else 0
+--                let jumpGarbageSize         = if (predIndex-jumpIndex) <= 0
+--                                                then jumpLength + (fromIntegral $ B.length jumpPrefix)
+--                                                else jumpLength
+                let jumpGarbageSize         = jumpLength + (fromIntegral $ B.length jumpPrefix)
                 let jumpGadget              = (jumpFlavor (byteOffset - jumpByteOffset - jumpGarbageSize))
                 let gadgets                 = filter ((jumpLength==) . fromIntegral . B.length . fst)
                                                 $ concatMap S.toList
@@ -537,7 +555,9 @@ makePredicate :: [[G.Gadget]] -> Predicate ()
 makePredicate allGadgetStreams = do
     state@(CodeGenState{..})    <- get
     gadgetStream                <- lift allGadgetStreams -- grab a sequence of gadgets that do what we want
-    metaStream                  <- mapM translateGadget gadgetStream -- translate all of the gadgets to instructions
+    --noops                       <- lift (inits $ repeat G.NoOp)
+    --metaStream                  <- mapM translateGadget (gadgetStream++noops) -- translate all of the gadgets to instructions
+    metaStream                  <- mapM translateGadget (gadgetStream) -- translate all of the gadgets to instructions
     byteIndex                   <- lift $ maybeToList $ M.lookup currentPredicate predicateToByte
     let nextByteIndex           = byteIndex + (foldr' (+) 0 $ map (fromIntegral . B.length) metaStream)
     let newCode                 = generatedCode ++ [(Right $ B.concat metaStream)]

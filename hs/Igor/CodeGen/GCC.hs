@@ -2,23 +2,37 @@
 module Igor.CodeGen.GCC
 ( 
 -- * Methods
-  createObjFile
+  compile
 ) where
 
 import qualified    Data.ByteString as B
+import              Data.Maybe
 import              Igor.CodeGen
 import              Igor.Gadget.Discovery
 import              System.FilePath
 import              System.Random
 
-createObjFile   :: FilePath -- ^ Where to write the *.o file to
-                -> [(String,PredicateProgram)]  -- ^ A list of functions to generate
-                -> GadgetLibrary
-                -> IO Bool -- ^ Was the file successfully generated?
-createObjFile file methods library = do
-    gen     <- newStdGen
-    return False
-    --generate
+compile :: GadgetLibrary
+        -> FilePath -- ^ Where to write the *.o file to
+        -> [(String,PredicateProgram)]  -- ^ A list of functions to generate
+        -> IO Bool -- ^ Was the file successfully generated?
+compile library file methods = do
+    maybeMethods        <- mapM compileMethod methods
+    let compiledMethods = catMaybes maybeMethods
+    -- Ensure that all of the methods could be generated
+    if length compiledMethods == length maybeMethods
+        then do
+            let objContents = objTemplate file $ map objMethod compiledMethods
+            writeFile file objContents
+            return True
+        else return False
+    where
+        compileMethod :: (String, PredicateProgram) -> IO (Maybe (String,B.ByteString,Integer))
+        compileMethod (methodName,methodBody) = do
+            gen                         <- newStdGen
+            return $ do 
+                GeneratedCode{..}       <- generate library gen methodBody
+                return (methodName, byteCode, localVariableSize)
 
 -- | Given a FilePath and a list of method definitions, fills in the AS
 -- template.
@@ -31,13 +45,13 @@ objMethod (method,body,localVarSize) =
     unlines [
             ".LC_"++method++":"
         ,   "\t.text"
-        ,   "\t.glob\t"++method
+        ,   "\t.globl\t"++method
         ,   "\t.type\t"++method++", @function"
         ,   method++":"
         ,   ".LFB_"++method++":"
-        ,   "\tpushq\t%rbp"
-        ,   "\tmovq\t%rsp, %rbp"
-        ,   "\tsubq\t$"++(show localVarSize)++", %rsp"
+        ,   "\tpush\t%ebp"
+        ,   "\tmov\t%esp, %ebp"
+        ,   "\tsub\t$"++(show localVarSize)++", %esp"
         ]
     ++ bytesForBody
     ++ unlines [

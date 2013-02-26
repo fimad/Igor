@@ -30,11 +30,11 @@ doDiscover file source = do
     existingLibrary <- if fileExists
                             then do
                                 putStrLn "Reading existing library..."
-                                load file
+                                loadLibrary file
                             else
                                 return emptyLibrary
     putStrLn "Looking for gadgets..."
     newLibrary      <- discoverMore 10000 generator existingLibrary
     putStrLn "Working..."
-    save file newLibrary
+    saveLibrary file newLibrary
     putStrLn "Done!"

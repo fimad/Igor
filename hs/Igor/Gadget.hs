@@ -29,6 +29,8 @@ data Gadget = NoOp
             | LoadMemReg X.Register X.Register X.Value
             | StoreMemReg X.Register X.Value X.Register
             | Plus X.Register (S.Set X.Register)
+            | Xor X.Register (S.Set X.Register)
+            | Times X.Register (S.Set X.Register)
             | Minus X.Register X.Register X.Register
             | RightShift X.Register Integer -- arithmetic shift
             | Compare X.Register X.Register
@@ -91,6 +93,8 @@ matchGadgets source expression = catMaybes $ map ($ expression) gadgetMatchers
             , matchLoadMemReg
             , matchStoreMemReg
             , matchPlus
+            , matchXor
+            , matchMul
             , matchMinus
             , matchRightShift
             , matchCompare
@@ -131,6 +135,20 @@ matchGadgets source expression = catMaybes $ map ($ expression) gadgetMatchers
             (X.Plus (X.InitialValue (X.RegisterLocation reg1)) (X.InitialValue (X.RegisterLocation reg2))) =
                 Just (Plus srcReg (S.fromList [reg1, reg2]), [srcLoc])
         matchPlus _ _ =
+                Nothing
+
+        matchXor
+            srcLoc@(X.RegisterLocation srcReg)
+            (X.Xor (X.InitialValue (X.RegisterLocation reg1)) (X.InitialValue (X.RegisterLocation reg2))) =
+                Just (Xor srcReg (S.fromList [reg1, reg2]), [srcLoc])
+        matchXor _ _ =
+                Nothing
+
+        matchMul
+            srcLoc@(X.RegisterLocation srcReg)
+            (X.Times (X.InitialValue (X.RegisterLocation reg1)) (X.InitialValue (X.RegisterLocation reg2))) =
+                Just (Times srcReg (S.fromList [reg1, reg2]), [srcLoc])
+        matchMul _ _ =
                 Nothing
 
         matchMinus

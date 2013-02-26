@@ -15,7 +15,7 @@ main = do
     case args of
         [libraryFile, output]   -> do
             putStrLn "Loading library..."
-            library <- load libraryFile
+            library <- loadLibrary libraryFile
             putStrLn "Generating code..."
             result  <- compile library output [("test", testProgram)]
             case result of
@@ -40,14 +40,8 @@ main = do
 
 testProgram :: PredicateProgram
 testProgram = do
-    [v1]  <- makeVariables 1
-    [start,end] <- makeLabels 2
-    label start
-    set v1 47
+    [i1]  <- makeInputs 1
+    [v1]  <- makeLocals 1
+    --set v1 47
+    load v1 i1
     ret v1
-    label end
---    move v1 v2
---    move v2 v3
---    move v3 v1
---    add v1 v2 v3
---    sub v3 v1 v2

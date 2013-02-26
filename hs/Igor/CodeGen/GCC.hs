@@ -50,12 +50,19 @@ objMethod (method,body,localVarSize) =
         ,   method++":"
         ,   ".LFB_"++method++":"
         ,   "\tpush\t%ebp"
+        ,   "\tpush\t%edi"
+        ,   "\tpush\t%esi"
+        ,   "\tpush\t%ebx"
         ,   "\tmov\t%esp, %ebp"
         ,   "\tsub\t$"++(show localVarSize)++", %esp"
         ]
     ++ bytesForBody
     ++ unlines [
-            "\tleave"
+            "\tadd\t$"++(show localVarSize)++", %esp"
+        ,   "\tpop\t%ebx"
+        ,   "\tpop\t%esi"
+        ,   "\tpop\t%edi"
+        ,   "\tpop\t%ebp"
         ,   "\tret"
         ,   ".LFE_"++method++":"
         ,   "\t.size\t"++method++", .-"++method

@@ -12,16 +12,21 @@ module Igor.CodeGen
 , makeLabel
 , makeLabels
 , label
-, makeVariable
-, makeVariables
+, makeLocal
+, makeLocals
+, makeInput
+, makeInputs
 -- ** Predicates
 , move
 , add
 , sub
+, xor
+, mul
 , jump
 , noop
 , set
 , ret
+, load
 -- *** Jump Reasons
 , (-<-)
 , (-<=-)
@@ -33,7 +38,7 @@ module Igor.CodeGen
 ) where
 
 import              Control.Monad.State
-import              Data.Bits
+import              Data.Bits (shiftR)
 import qualified    Data.ByteString         as B
 import              Data.Either
 import              Data.Function
@@ -106,6 +111,7 @@ data CodeGenState       = CodeGenState {
     ,   predicateToByte     :: M.Map Integer Integer -- ^ Maps from predicate indices to byte indices
     ,   localVariableOffset :: Integer -- ^ How far from EBP should we assign the next local variable?
     ,   endOfCodeLabel      :: Label -- ^ Marks the end of body. Used for jumping out to return.
+    ,   inputVariableOffset :: Integer -- ^ How much room on the stack is reserved for the input variables
     }
 
 initialState :: D.GadgetLibrary -> StdGen -> CodeGenState
@@ -119,6 +125,9 @@ initialState library gen = CodeGenState {
     ,   currentPredicate    = 0
     ,   predicateToByte     = M.insert 0 0 M.empty
     ,   localVariableOffset = 0
+     -- | NOTE: This is dependent on the number of registers saved before moving
+     -- ebp to esp, which is dependent on the backend scaffolding ... ugh....
+    ,   inputVariableOffset = 16
     ,   endOfCodeLabel      = 1 -- ^ The end of code label will always be the first label made.
     }
     where
@@ -138,13 +147,34 @@ move a b = do
     CodeGenState{..} <- get
     makePredicate2 (moveHelper locationPool) a b
  
--- | Jumps to the end of a method and moves the given variable to EAX.
+-- | "Returns" from the method. This is done by jumping to the end of a method
+-- and moving the given variable to EAX.
 ret :: Variable -> Predicate ()
 ret a = do
     CodeGenState{..}    <- get
     aLoc                <- varToLoc' a
     let moveAToEAX = moveHelper locationPool (X.RegisterLocation X.EAX) aLoc
     calculateJump moveAToEAX (G.Jump X.Always) endOfCodeLabel
+
+-- | Dereferences the second variable and stores it in the first. Similar to a
+-- 'move' instruction.
+load :: Variable -> Variable -> Predicate ()
+load dst src = do
+    CodeGenState{..}    <- get
+    makePredicate2 (load' locationPool ) dst src
+
+    where
+        load' pool dstLoc srcLoc =
+            [
+                    moveSrcToReg ++ moveDrefRegToDst
+            | 
+                    regLoc@(X.RegisterLocation reg) <- srcLoc:pool
+                ,   memLoc                          <- [X.MemoryLocation reg 0]
+                ,   pool'                           <- [pool \\ [regLoc]]
+                ,   moveSrcToReg                    <- moveHelper pool' regLoc srcLoc 
+                ,   moveDrefRegToDst                <- moveHelper pool' dstLoc memLoc 
+            ]
+
 
 -- | Loads a constant into a variable
 set :: Variable -> Integer -> Predicate ()
@@ -221,6 +251,46 @@ sub a b c = do
                 ,   moveB <- moveHelper pool bLoc b -- Move b into x
                 ,   moveC <- moveHelper pool cLoc c -- Move c into y
                 ,   moveA <- moveHelper pool a bLoc -- Move the result into a
+            ]
+
+mul :: Variable -> Variable -> Variable -> Predicate ()
+mul a b c = do
+    CodeGenState{..} <- get
+    makePredicate3 (mul' locationPool) a b c
+    where
+        mul' pool a b c = 
+            [ 
+                    moveX -- Move u to a temporary register
+                ++  moveY -- Move v to a temporary register
+                ++  [G.Times xReg $ S.fromList [xReg,yReg]] -- We are more likely to find an add involving 2 registers
+                ++  moveA -- Move the result into a
+            | 
+                    (x,y) <- [(b,c), (c,b)]
+                ,   xLoc@(X.RegisterLocation xReg) <- a:x:pool
+                ,   yLoc@(X.RegisterLocation yReg) <- (y:pool) \\ [xLoc]
+                ,   moveX <- moveHelper pool xLoc x -- Move b into x
+                ,   moveY <- moveHelper pool yLoc y -- Move c into y
+                ,   moveA <- moveHelper pool a xLoc -- Move the result into a
+            ]
+
+xor :: Variable -> Variable -> Variable -> Predicate ()
+xor a b c = do
+    CodeGenState{..} <- get
+    makePredicate3 (xor' locationPool) a b c
+    where
+        xor' pool a b c = 
+            [ 
+                    moveX -- Move u to a temporary register
+                ++  moveY -- Move v to a temporary register
+                ++  [G.Xor xReg $ S.fromList [xReg,yReg]] -- We are more likely to find an add involving 2 registers
+                ++  moveA -- Move the result into a
+            | 
+                    (x,y) <- [(b,c), (c,b)]
+                ,   xLoc@(X.RegisterLocation xReg) <- a:x:pool
+                ,   yLoc@(X.RegisterLocation yReg) <- (y:pool) \\ [xLoc]
+                ,   moveX <- moveHelper pool xLoc x -- Move b into x
+                ,   moveY <- moveHelper pool yLoc y -- Move c into y
+                ,   moveA <- moveHelper pool a xLoc -- Move the result into a
             ]
 
 add :: Variable -> Variable -> Variable -> Predicate ()
@@ -438,7 +508,7 @@ generate library gen program = listToMaybe $ do
     guard $ (null . lefts) eitherCode
     return GeneratedCode {
             byteCode            = byteCode
-        ,   localVariableSize   = localVariableOffset solution
+        ,   localVariableSize   = 0 - localVariableOffset solution
     }
     where
         -- | Attempts to replace forward jump statements for a given element in
@@ -473,8 +543,8 @@ generate library gen program = listToMaybe $ do
         replaceJumpHolders _ _ _ meta = return meta
 
 -- | Create a variable for use with the predicate functions.
-makeVariable :: Predicate Variable
-makeVariable = do
+makeLocal :: Predicate Variable
+makeLocal = do
     state@CodeGenState{..}      <- get
     -- Find the next available offset from EBP to use as the local stack
     -- variable
@@ -489,7 +559,7 @@ makeVariable = do
     put $! state {
             variableMap         = M.insert variableId variableLocation variableMap
         ,   locationPool        = locationPool \\ [variableLocation]
-        ,   localVariableOffset = stackOffset
+        ,   localVariableOffset = if variableLocation == stackVariable then stackOffset else localVariableOffset
         }
     return variableId
     where
@@ -502,8 +572,28 @@ makeVariable = do
         findValidOffsets _                          _ sets                  = sets
 
 -- | Create n variables for use with the predicate functions.
-makeVariables :: Int -> Predicate [Variable]
-makeVariables n = sequence $ replicate n makeVariable
+makeLocals :: Int -> Predicate [Variable]
+makeLocals n = sequence $ replicate n makeLocal
+
+-- | Create a variable for use with the predicate functions.
+makeInput :: Predicate Variable
+makeInput = do
+    state@CodeGenState{..}      <- get
+    -- Find the next available offset from EBP to use as the local stack
+    -- variable
+    let stackOffset             = inputVariableOffset + 4
+    let stackVariable           = X.MemoryLocation X.EBP $ fromIntegral stackOffset
+    -- Allocate an integer id for the new variable
+    let variableId              = (maximum $ 0 : M.keys variableMap) + 1
+    put $! state {
+            variableMap         = M.insert variableId stackVariable variableMap
+        ,   inputVariableOffset = stackOffset
+        }
+    return variableId
+
+-- | Create n variables for use with the predicate functions.
+makeInputs :: Int -> Predicate [Variable]
+makeInputs n = sequence $ replicate n makeInput
 
 -- | Creates a 'label' which is just an integer which maps to a position in the
 -- predicate stream.

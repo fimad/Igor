@@ -12,8 +12,8 @@ module Igor.Gadget.Discovery
 , libraryInsert
 , discover
 , discoverMore
-, save
-, load
+, saveLibrary
+, loadLibrary
 ) where
 
 import              Codec.Compression.Zlib
@@ -74,11 +74,11 @@ instance Binary GadgetLibrary where
 -- GadgetLibrary operations
 --------------------------------------------------------------------------------
 
-save :: String -> GadgetLibrary -> IO ()
-save file library = B.writeFile file . B.concat . LB.toChunks . encode $!! library
+saveLibrary :: String -> GadgetLibrary -> IO ()
+saveLibrary file library = B.writeFile file . B.concat . LB.toChunks . encode $!! library
 
-load :: String -> IO GadgetLibrary
-load file = do
+loadLibrary :: String -> IO GadgetLibrary
+loadLibrary file = do
     library <- return . decode . LB.fromChunks . return =<< B.readFile file
     library `deepseq` performGC
     return $!! library

@@ -159,6 +159,14 @@ eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Iinc})     
     let dstValue                        =  Plus (Constant 1) dstExpr
     return $ (M.insert dstLocation dstValue state', False)
 
+eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Imul})     = do
+    let state'  = clobbersFlags state
+    buildExpr2 state' Times (H.inOperands instruction)
+
+eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ixor})     = do
+    let state'  = clobbersFlags state
+    buildExpr2 state' Xor (H.inOperands instruction)
+
 eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Iadd})     = do
     let state'  = clobbersFlags state
     buildExpr2 state' Plus (H.inOperands instruction)

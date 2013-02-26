@@ -155,15 +155,26 @@ set var value = do
     where
         set' pool constants shifts var = 
             [ 
-                    constantGadget
+                    saveConstant
+                ++  saveShift
+                ++  constantGadget
                 :   moveShift
                 ++  shiftGadget
                 :   moveVar
+                ++  restoreConstant
+                ++  restoreShift
             | 
                     (constantGadget,cLoc)   <- constants
                 ,   (shiftGadget,sLoc)      <- shifts
-                ,   moveShift               <- moveHelper pool sLoc cLoc 
-                ,   moveVar                 <- moveHelper pool var sLoc 
+                ,   saveConstantLoc         <- pool
+                ,   saveShiftLoc            <- (pool \\ [saveConstantLoc])
+                ,   pool'                   <- [pool \\ [saveConstantLoc, saveShiftLoc]]
+                ,   saveConstant            <- moveHelper pool' saveConstantLoc cLoc
+                ,   saveShift               <- moveHelper pool' saveShiftLoc sLoc
+                ,   restoreConstant         <- moveHelper pool' cLoc saveConstantLoc
+                ,   restoreShift            <- moveHelper pool' sLoc saveShiftLoc
+                ,   moveShift               <- moveHelper pool' sLoc cLoc 
+                ,   moveVar                 <- moveHelper pool' var sLoc 
             ]
 
         numBits             = ceiling $ logBase 2 (fromIntegral value+1)
@@ -171,14 +182,14 @@ set var value = do
 
         getConstant :: S.Set X.Location -> G.Gadget -> Maybe (G.Gadget, X.Location)
         getConstant poolSet g@(G.LoadConst reg val)
-            | not $ (X.RegisterLocation reg) `S.member` poolSet = Nothing
+            -- | not $ (X.RegisterLocation reg) `S.member` poolSet = Nothing
             | shiftR val shiftSize == fromIntegral value        = Just (g, X.RegisterLocation reg)
             | otherwise                                         = Nothing
         getConstant _ _                                         = Nothing
 
         getShift :: S.Set X.Location -> G.Gadget -> Maybe (G.Gadget, X.Location)
         getShift poolSet g@(G.RightShift reg val)
-            | not $ (X.RegisterLocation reg) `S.member` poolSet = Nothing
+            -- | not $ (X.RegisterLocation reg) `S.member` poolSet = Nothing
             | shiftSize == fromIntegral val                     = Just (g, X.RegisterLocation reg)
             | otherwise                                         = Nothing
         getShift _ _                                            = Nothing
@@ -446,13 +457,14 @@ makeVariable = do
     state@CodeGenState{..}      <- get
     -- Find the next available offset from EBP to use as the local stack
     -- variable
-    let (readable,writeable)    = M.foldrWithKey' findValidOffsets ([],[]) $ D.gadgetMap library
-    let validOffsets            = map fromIntegral $ reverse $ sort $ readable `intersect` writeable
+    let (readable,writeable)    = M.foldrWithKey' findValidOffsets (S.empty, S.empty) $ D.gadgetMap library
+    let validOffsets            = map fromIntegral $ reverse $ S.toAscList $ readable `S.intersection` writeable
     stackOffset                 <- lift $ take 1 $ filter (<=localVariableOffset - 4) validOffsets
     let stackVariable           = X.MemoryLocation X.EBP $ fromIntegral stackOffset
     -- Allocate an integer id for the new variable
     let variableId              = (maximum $ 0 : M.keys variableMap) + 1
     variableLocation            <- lift $ locationPool++[stackVariable]
+    --variableLocation            <- lift $ [stackVariable]
     put $! state {
             variableMap         = M.insert variableId variableLocation variableMap
         ,   locationPool        = locationPool \\ [variableLocation]
@@ -464,9 +476,9 @@ makeVariable = do
         -- list. If folded over a list of gadgets, it will produces a tuple of
         -- two lists that contain all of the offsets that are readable and
         -- writeable respectively.
-        findValidOffsets (G.LoadMemReg _ _ offset)  _ (readable,writeable)  = (offset:readable,writeable)
-        findValidOffsets (G.StoreMemReg _ offset _) _ (readable,writeable)  = (readable,offset:writeable)
-        findValidOffsets _                          _ lists                 = lists
+        findValidOffsets (G.LoadMemReg _ _ offset)  _ (readable,writeable)  = (offset `S.insert` readable,writeable)
+        findValidOffsets (G.StoreMemReg _ offset _) _ (readable,writeable)  = (readable,offset `S.insert` writeable)
+        findValidOffsets _                          _ sets                  = sets
 
 -- | Create n variables for use with the predicate functions.
 makeVariables :: Int -> Predicate [Variable]

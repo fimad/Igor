@@ -20,6 +20,7 @@ Library
         Igor
         Igor.ByteModel
         Igor.CodeGen
+        Igor.CodeGen.GCC
         Igor.Derive
         Igor.Expr
         Igor.Eval

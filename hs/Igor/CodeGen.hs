@@ -166,13 +166,16 @@ set var value = do
             | 
                     (constantGadget,cLoc)   <- constants
                 ,   (shiftGadget,sLoc)      <- shifts
-                ,   saveConstantLoc         <- pool
-                ,   saveShiftLoc            <- (pool \\ [saveConstantLoc])
-                ,   pool'                   <- [pool \\ [saveConstantLoc, saveShiftLoc]]
+                ,   saveConstantLoc         <- (pool \\ [sLoc, cLoc])
+                ,   saveShiftLoc            <- (pool \\ [sLoc, cLoc, saveConstantLoc])
+                ,   pool'                   <- [pool \\ [sLoc, cLoc, saveConstantLoc, saveShiftLoc]]
                 ,   saveConstant            <- moveHelper pool' saveConstantLoc cLoc
                 ,   saveShift               <- moveHelper pool' saveShiftLoc sLoc
-                ,   restoreConstant         <- moveHelper pool' cLoc saveConstantLoc
-                ,   restoreShift            <- moveHelper pool' sLoc saveShiftLoc
+                -- If the variable is the same s the sLoc or cLoc then we don't
+                -- want to overwrite them by restoring their value prior to
+                -- computation
+                ,   restoreConstant         <- if var == cLoc then [] else moveHelper pool' cLoc saveConstantLoc
+                ,   restoreShift            <- if var == sLoc then [] else moveHelper pool' sLoc saveShiftLoc
                 ,   moveShift               <- moveHelper pool' sLoc cLoc 
                 ,   moveVar                 <- moveHelper pool' var sLoc 
             ]
@@ -554,7 +557,8 @@ translateGadget gadget = do
     state@(CodeGenState{..})    <- get
     gadgetSet                   <- lift $ maybeToList $ D.libraryLookup gadget library
     let (shuffled,gen)          = sampleState (shuffle $! S.toList gadgetSet) randomGenerator
-    let newLocationPool         = locationPool \\ G.defines gadget
+    let newLocationPool         = locationPool \\ (G.defines gadget)
+    (bytes,clobbering)          <- lift $ filter (doesNotClobber newLocationPool gadget) $ shuffled
     -- put the generator in the state so that the jump replacement code
     -- and future gadgets can be random as well
     put $! state {
@@ -562,8 +566,7 @@ translateGadget gadget = do
             -- Remove any intermediate values from the location pool
         ,   locationPool    = newLocationPool
         }
-    meta                        <- lift $ map fst $ filter (doesNotClobber newLocationPool gadget) $ shuffled
-    return $! meta
+    return $! bytes
 
    
 -- | Ensures that a gadget realization does not clobber locations that

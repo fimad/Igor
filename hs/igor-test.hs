@@ -35,14 +35,10 @@ main = do
 
 testProgram :: PredicateProgram
 testProgram = do
-    [v1,v2,v3]  <- makeVariables 3
+    [v1]  <- makeVariables 1
     [start,end] <- makeLabels 2
     label start
     set v1 0
-    set v2 1
-    set v3 10
-    add v1 v1 v2
-    jump start (v1 -<- v3)
     label end
 --    move v1 v2
 --    move v2 v3

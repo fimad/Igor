@@ -11,6 +11,7 @@ module Igor.Gadget
 ) where
 
 import              Control.DeepSeq
+import              Control.Monad
 import              Data.Binary
 import              Data.DeriveTH
 import qualified    Data.Set    as S
@@ -55,9 +56,22 @@ defines _                       = []
 -- that correspond to the given execution state.
 match :: State -> [Match]
 match state = do
-    (location,expression) <- (M.assocs state)
-    (gadget,nonClobbered) <- matchGadgets location expression
+    (location,expression)   <- (M.assocs state)
+    let allOtherExpressions = location `M.delete` state
+    guard $ not $ any isIllegalExpression $ M.elems allOtherExpressions
+    (gadget,nonClobbered)   <- matchGadgets location expression
     return (gadget, M.keys $ foldl (flip M.delete) state nonClobbered)
+    where
+        -- | Make sure that no expression touches a memory location. If this is
+        -- not done, it would be possible for a junk expression read from an out
+        -- of bounds memory location causing a segfault. Certainly undesirable.
+        isIllegalExpression (X.InitialValue (X.MemoryLocation _ _)) = True
+        isIllegalExpression (X.Plus a b)                            = isIllegalExpression a || isIllegalExpression b
+        isIllegalExpression (X.Minus a b)                           = isIllegalExpression a || isIllegalExpression b
+        isIllegalExpression (X.RightShift a b)                      = isIllegalExpression a || isIllegalExpression b
+        isIllegalExpression (X.Comparison a b)                      = isIllegalExpression a || isIllegalExpression b
+        isIllegalExpression (X.Conditional _ a)                     = isIllegalExpression a
+        isIllegalExpression _                                       = False
 
 -- | Create a list of all of the
 matchGadgets :: X.Location -- ^ The source of the current expression

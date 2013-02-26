@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 module Igor.Eval
 (
 -- * Types
@@ -84,13 +85,16 @@ operandToExpression location state      = valueOf (operandToLocation location) s
 -- this function will pull out 2 operands, turn then to expressions and
 -- insert the result into the corresponding source location in the
 -- state.
+-- To prevent Segfaults, this method only allows the operands to be registers.
+-- If more general locations are required for an opcode do not use this method.
 buildExpr2 ::  State -> (Expression -> Expression -> Expression) -> [H.Operand] -> Maybe (State, Bool)
 buildExpr2 state expr operands = do
-    dst         <- listToMaybe $ operands
-    src         <- listToMaybe $ drop 1 $ operands
-    dstLocation <- operandToLocation dst
-    srcValue    <- operandToExpression src state
-    dstValue    <- operandToExpression dst state
+    dst                                 <- listToMaybe $ operands
+    src                                 <- listToMaybe $ drop 1 $ operands
+    dstLocation                         <- operandToLocation dst
+    srcLocation                         <- operandToLocation dst
+    srcValue                            <- operandToExpression src state
+    dstValue                            <- operandToExpression dst state
     return (M.insert dstLocation (expr dstValue srcValue) state, False)
 
 -- | Marks that the flags register has been clobbered
@@ -149,10 +153,10 @@ eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Imov})     
 
 eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Iinc})     = do
     let state'  = clobbersFlags state
-    dst         <- listToMaybe $ H.inOperands instruction
-    dstLocation <- operandToLocation dst
-    dstExpr     <- operandToExpression dst state'
-    let dstValue =  Plus (Constant 1) dstExpr
+    dst                                 <- listToMaybe $ H.inOperands instruction
+    dstLocation                         <- operandToLocation dst
+    dstExpr                             <- operandToExpression dst state'
+    let dstValue                        =  Plus (Constant 1) dstExpr
     return $ (M.insert dstLocation dstValue state', False)
 
 eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Iadd})     = do

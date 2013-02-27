@@ -2,7 +2,7 @@
 module Igor.Expr
 ( 
 -- * Types
-  Address
+  Address (..)
 , Value
 , Register (..)
 , Reason (..)
@@ -18,9 +18,7 @@ import              Data.DeriveTH
 import              Data.Int
 import              Data.List
 import              Data.Word
-
-type Address = Word32
-
+--
 -- | Since we are only considering 32bit intel machines, values are always going
 -- to fit inside of a 32bit integer. 
 type Value = Int32
@@ -64,10 +62,15 @@ generalRegisters = [EAX, EBX, ECX, EDX, EDI, ESI]
 specialRegisters :: [Register]
 specialRegisters = [minBound .. maxBound] \\ generalRegisters
 
+data Address  = OffsetAddress Register Value
+              | IndexedAddress Register Register Value Value -- base index scale offset
+    deriving (Ord, Eq, Show, Read)
+
 -- | If you think of the state of a machine as a dictionary, Locations are keys,
 -- and include things like memory locations, registers and status flags.
 data Location = --MemoryLocation Address
-                MemoryLocation Register Value
+                --MemoryLocation Register Value
+                MemoryLocation Address
               | RegisterLocation Register 
     deriving (Ord, Eq, Show, Read)
 
@@ -94,10 +97,12 @@ data Expression = InitialValue Location
 
 $( derive makeBinary ''Reason )
 $( derive makeBinary ''Register )
+$( derive makeBinary ''Address )
 $( derive makeBinary ''Location )
 $( derive makeBinary ''Expression )
 
 $( derive makeNFData ''Reason )
 $( derive makeNFData ''Register )
+$( derive makeNFData ''Address )
 $( derive makeNFData ''Location )
 $( derive makeNFData ''Expression )

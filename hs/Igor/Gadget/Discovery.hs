@@ -27,6 +27,7 @@ import              Data.DeriveTH
 import              Data.List
 import              Data.Foldable (foldr')
 import qualified    Data.Map                as M
+import qualified    Data.IntMap             as IM
 import qualified    Data.HashMap            as HM
 import qualified    Data.Set                as S
 import              Data.Maybe
@@ -59,15 +60,15 @@ instance Binary GadgetLibrary where
                             $   map (S.map fst) 
                             $   M.elems gadgetMap
         let metadataToInt   = metadataSet `deepseq` M.fromList $ zip metadataSet [1::Int ..] 
-        let intToBytes      = metadataToInt `deepseq` M.fromList $ map swap $ M.assocs metadataToInt
+        let intToBytes      = metadataToInt `deepseq` IM.fromList $ map swap $ M.assocs metadataToInt
         let libraryWithInts = intToBytes `deepseq` M.map (S.map (\(m,c) -> (metadataToInt M.! m,c))) gadgetMap
         put $!! intToBytes
         put $!! libraryWithInts
 
     get = do
-        !intToBytes          <- get :: Get (M.Map Int B.ByteString)
+        !intToBytes          <- get :: Get (IM.IntMap B.ByteString)
         !libraryWithInts     <- intToBytes `deepseq` get
-        let library         = libraryWithInts `deepseq` M.map (S.map (\(m,c) -> (intToBytes M.! m,c))) libraryWithInts
+        let library         = libraryWithInts `deepseq` M.map (S.map (\(m,c) -> (intToBytes IM.! m,c))) libraryWithInts
         return $ GadgetLibrary $!! library :: Get GadgetLibrary
 
 --------------------------------------------------------------------------------

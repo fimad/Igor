@@ -1,4 +1,5 @@
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE BangPatterns #-}
 module Igor.CodeGen
 ( 
 -- * Types
@@ -9,9 +10,9 @@ module Igor.CodeGen
 , GeneratedCode(..)
 -- * Methods
 , generate
-, makeLabel
-, makeLabels
-, label
+--, makeLabel
+--, makeLabels
+--, label
 , makeLocal
 , makeLocals
 , makeInput
@@ -21,6 +22,9 @@ module Igor.CodeGen
 , Paramable
 , toParam
 , withParam
+, withParamAsRegister
+, withParamAsSavedRegister
+, withSavedRegister
 , withRegister
 , withTempRegister
 , withTempRegister'
@@ -30,17 +34,17 @@ module Igor.CodeGen
 , sub
 , xor
 , mul
-, jump
+--, jump
 , noop
-, ret
+--, ret
 -- *** Jump Reasons
-, (-<-)
-, (-<=-)
-, (->-)
-, (->=-)
-, (-==-)
-, (-!=-)
-, always
+--, (-<-)
+--, (-<=-)
+--, (->-)
+--, (->=-)
+--, (-==-)
+--, (-!=-)
+--, always
 ) where
 
 import              Control.Monad.State
@@ -205,8 +209,12 @@ withTempRegister nonFreeRegs method = do
     put                     $! state { locationPool = locationPool \\ [X.RegisterLocation tempReg] }
     result                  <- method tempReg
     -- Restore temp to the location pool if it was originally free
-    if X.RegisterLocation tempReg `elem` locationPool
-        then get >>= \state -> put (state { locationPool = (X.RegisterLocation tempReg):locationPool  })
+    if (X.RegisterLocation tempReg) `elem` locationPool
+        then do
+            state@CodeGenState{..}  <- get
+            put $ state {
+                locationPool = (X.RegisterLocation tempReg):locationPool
+            }
         else return ()
     return result
 
@@ -214,6 +222,59 @@ withTempRegister nonFreeRegs method = do
 -- pre-applied as []
 withTempRegister' :: (X.Register -> Partial b) -> Partial b
 withTempRegister' = withTempRegister []
+
+saveParamAsRegister :: Paramable p => p -> (X.Register -> Partial b) -> Partial b
+saveParamAsRegister paramable method =
+    withParam paramable $ flip saveAsRegister method
+
+-- | Create's a temporary register passes it to method and then once method is
+-- complete, stores the value in param.
+saveAsRegister :: Param -> (X.Register -> Partial b) -> Partial b
+saveAsRegister param method =
+    withTempRegister' (savingMethod param)
+    where
+        savingMethod (Register dstReg)  reg = do
+            result <- method reg
+            translateGadget $ G.LoadReg dstReg reg
+            return result
+        savingMethod (Memory dstAddr)   reg = do
+            result <- method reg
+            withTempRegister [reg] $ \tmpReg -> do
+                translateGadget $ G.LoadReg tmpReg reg
+                translateGadget $ G.StoreMemReg dstAddr tmpReg
+                return result
+        savingMethod _                  reg = fail "Attempting to save to a non-location."
+
+-- | Allows you to pull a Paramable value directly into a register. Basically
+-- syntactic sugar for withParam p $ \p' -> withRegister p' $ method.
+withParamAsRegister :: Paramable p => p -> (X.Register -> Partial b) -> Partial b
+withParamAsRegister paramable method =
+    withParam paramable $ flip withRegister method
+
+-- | Allows you to pull a Paramable value directly into a register and then save
+-- it. Basically syntactic sugar for withParam p $ \p' -> withSavedRegister p' $
+-- method.
+withParamAsSavedRegister :: Paramable p => p -> (X.Register -> Partial b) -> Partial b
+withParamAsSavedRegister paramable method =
+    withParam paramable $ flip withSavedRegister method
+
+-- | Same as 'withRegister' except that the value of register at the end of the
+-- method call is moved to the Param's original location.
+withSavedRegister :: Param -> (X.Register -> Partial b) -> Partial b
+withSavedRegister param method = 
+    withRegister param (savingMethod param)
+    where
+        savingMethod (Register dstReg)  reg = do
+            result <- method reg
+            translateGadget $ G.LoadReg dstReg reg
+            return result
+        savingMethod (Memory dstAddr)   reg = do
+            result <- method reg
+            withTempRegister [reg] $ \tmpReg -> do
+                translateGadget $ G.LoadReg tmpReg reg
+                translateGadget $ G.StoreMemReg dstAddr tmpReg
+                return result
+        savingMethod _                  reg = fail "Attempting to save to a non-location."
 
 -- | Moves the value described by Param into a temporary register that will be
 -- freed at the end of the method. Note that this method will fail if used on
@@ -240,15 +301,19 @@ withRegister (Memory address)   method =
     where
     -- Tries every possible way of accessing a given memory address
         possibleTranslations tempReg addr@(X.OffsetAddress baseReg offset) = 
+            withTempRegister [tempReg] $ \tempDstReg ->
             withTempRegister [baseReg] $ \tempBaseReg -> do
                     translateGadget $ G.LoadReg tempBaseReg baseReg
-                    translateGadget $ G.LoadMemReg tempReg (X.OffsetAddress tempBaseReg offset)
+                    translateGadget $ G.LoadMemReg tempDstReg (X.OffsetAddress tempBaseReg offset)
+                    translateGadget $ G.LoadReg tempReg tempDstReg
         possibleTranslations tempReg addr@(X.IndexedAddress baseReg indexReg scale offset) = 
+            withTempRegister [tempReg] $ \tempDstReg ->
             withTempRegister [baseReg] $ \tempBaseReg -> 
             withTempRegister [indexReg] $ \tempIndexReg -> do
                     translateGadget $ G.LoadReg tempBaseReg baseReg
                     translateGadget $ G.LoadReg tempIndexReg indexReg
-                    translateGadget $ G.LoadMemReg tempReg (X.IndexedAddress tempBaseReg tempIndexReg scale offset)
+                    translateGadget $ G.LoadMemReg tempDstReg (X.IndexedAddress tempBaseReg tempIndexReg scale offset)
+                    translateGadget $ G.LoadReg tempReg tempDstReg
 
 withRegister (Constant value)   method = 
     withTempRegister' $ \valueReg -> do
@@ -300,7 +365,7 @@ withRegister (Constant value)   method =
 translateGadget :: G.Gadget -> Partial ()
 translateGadget gadget = do
     state@(CodeGenState{..})    <- get
-    gadgetSet                   <- lift $ maybeToList $ D.libraryLookup gadget library
+    !gadgetSet                   <- lift $ maybeToList $ D.libraryLookup gadget library
     let (shuffled,gen)          = sampleState (shuffle $! S.toList gadgetSet) randomGenerator
     (bytes,_)                   <- lift $ filter (doesNotClobber locationPool gadget) $ shuffled
     let newCode                 = generatedCode ++ [Right bytes]
@@ -329,14 +394,52 @@ doesNotClobber' locationPool clobber =
 -- Statements
 --------------------------------------------------------------------------------
 
---noop :: Predicate ()
---noop = makePredicate $ inits $ repeat G.NoOp
---
---move :: Variable -> Variable -> Predicate ()
---move a b = do
---    CodeGenState{..} <- get
---    makePredicate2 (moveHelper locationPool) a b
--- 
+noop :: Statement
+noop = translateGadget G.NoOp
+
+move :: (Paramable a, Paramable b) => a -> b -> Statement
+move dst src = withParam dst moveToDst
+    where
+        moveToDst (Register dstReg) = 
+            withParamAsRegister src $ \srcReg ->
+            translateGadget $ G.LoadReg dstReg srcReg
+        moveToDst (Memory dstAddr)  = 
+            withParamAsRegister src $ \srcReg ->
+            translateGadget $ G.StoreMemReg dstAddr srcReg
+        moveToDst _                 = fail "Attempting to move to a non-location."
+
+add :: (Paramable a, Paramable b, Paramable c) => a -> b -> c -> Statement
+add dst val1 val2 = 
+    saveParamAsRegister dst $ \dstReg ->
+    withParamAsRegister val1 $ \val1Reg ->
+    withParamAsRegister val2 $ \val2Reg -> do
+        translateGadget $ G.LoadReg dstReg val1Reg
+        translateGadget $ G.Plus dstReg $ S.fromList [dstReg, val2Reg]
+
+mul :: (Paramable a, Paramable b, Paramable c) => a -> b -> c -> Statement
+mul dst val1 val2 = 
+    saveParamAsRegister dst $ \dstReg ->
+    withParamAsRegister val1 $ \val1Reg ->
+    withParamAsRegister val2 $ \val2Reg -> do
+        translateGadget $ G.LoadReg dstReg val1Reg
+        translateGadget $ G.Times dstReg $ S.fromList [dstReg, val2Reg]
+
+xor :: (Paramable a, Paramable b, Paramable c) => a -> b -> c -> Statement
+xor dst val1 val2 = 
+    saveParamAsRegister dst $ \dstReg ->
+    withParamAsRegister val1 $ \val1Reg ->
+    withParamAsRegister val2 $ \val2Reg -> do
+        translateGadget $ G.LoadReg dstReg val1Reg
+        translateGadget $ G.Xor dstReg $ S.fromList [dstReg, val2Reg]
+
+sub :: (Paramable a, Paramable b, Paramable c) => a -> b -> c -> Statement
+sub dst val1 val2 = 
+    saveParamAsRegister dst $ \dstReg ->
+    withParamAsRegister val1 $ \val1Reg ->
+    withParamAsRegister val2 $ \val2Reg -> do
+        translateGadget $ G.LoadReg dstReg val1Reg
+        translateGadget $ G.Minus dstReg dstReg val2Reg
+
 ---- | "Returns" from the method. This is done by jumping to the end of a method
 ---- and moving the given variable to EAX.
 --ret :: Variable -> Predicate ()
@@ -345,196 +448,6 @@ doesNotClobber' locationPool clobber =
 --    aLoc                <- varToLoc' a
 --    let moveAToEAX = moveHelper locationPool (X.RegisterLocation X.EAX) aLoc
 --    calculateJump moveAToEAX (G.Jump X.Always) endOfCodeLabel
---
----- | Stores the value of the second variable into the memory location pointed to
----- by the first.
---store :: Variable -> Variable -> Predicate ()
---store dst src = do
---    CodeGenState{..}    <- get
---    makePredicate2 (store' locationPool ) dst src
---
---    where
---        store' pool dstLoc srcLoc =
---            [
---                    moveDstToReg ++ moveSrcToDst
---            | 
---                    regLoc@(X.RegisterLocation reg) <- dstLoc:pool
---                ,   memLoc                          <- [X.MemoryLocation address]
---                ,   pool'                           <- [pool \\ [regLoc]]
---                ,   moveDstToReg                    <- moveHelper pool' regLoc dstLoc 
---                ,   moveSrcToDst                    <- moveHelper pool' memLoc srcLoc 
---            ]
---
---
----- | Dereferences the second variable and stores it in the first. Similar to a
----- 'move' instruction.
---load :: Variable -> Variable -> Predicate ()
---load dst src = do
---    CodeGenState{..}    <- get
---    makePredicate2 (load' locationPool ) dst src
---
---    where
---        load' pool dstLoc srcLoc =
---            [
---                    moveSrcToReg ++ moveDrefRegToDst
---            | 
---                    regLoc@(X.RegisterLocation reg) <- srcLoc:pool
---                ,   memLoc                          <- [X.MemoryLocation reg 0]
---                ,   pool'                           <- [pool \\ [regLoc]]
---                ,   moveSrcToReg                    <- moveHelper pool' regLoc srcLoc 
---                ,   moveDrefRegToDst                <- moveHelper pool' dstLoc memLoc 
---            ]
---
---
----- | Loads a constant into a variable
---set :: Variable -> Integer -> Predicate ()
---set var value = do
---    CodeGenState{..}            <- get
---    let poolSet                 = S.fromList locationPool
---    let gmap                    = D.gadgetMap library
---    let constantGadgets         = mapMaybe (getConstant poolSet) $ M.keys gmap
---    let shiftGadgets            = mapMaybe (getShift poolSet) $ M.keys gmap
---    makePredicate1 (set' locationPool constantGadgets shiftGadgets) var
---
---    where
---        set' pool constants shifts var = 
---            [ 
---                    saveConstant
---                ++  saveShift
---                ++  constantGadget
---                :   moveShift
---                ++  shiftGadget
---                :   moveVar
---                ++  restoreConstant
---                ++  restoreShift
---            | 
---                    (constantGadget,cLoc)   <- constants
---                ,   (shiftGadget,sLoc)      <- shifts
---                ,   saveConstantLoc         <- (pool \\ [sLoc, cLoc])
---                ,   saveShiftLoc            <- (pool \\ [sLoc, cLoc, saveConstantLoc])
---                ,   pool'                   <- [pool \\ [sLoc, cLoc, saveConstantLoc, saveShiftLoc]]
---                ,   saveConstant            <- moveHelper pool' saveConstantLoc cLoc
---                ,   saveShift               <- if sLoc == cLoc then [[]] else moveHelper pool' saveShiftLoc sLoc
---                -- If the variable is the same s the sLoc or cLoc then we don't
---                -- want to overwrite them by restoring their value prior to
---                -- computation
---                ,   restoreConstant         <- if var == cLoc then [[]] else moveHelper pool' cLoc saveConstantLoc
---                ,   restoreShift            <- if var == sLoc || sLoc == cLoc
---                                                then [[]]
---                                                else moveHelper pool' sLoc saveShiftLoc
---                ,   moveShift               <- moveHelper pool' sLoc cLoc 
---                ,   moveVar                 <- moveHelper pool' var sLoc 
---            ]
---
---        numBits             = ceiling $ logBase 2 (fromIntegral value+1)
---        shiftSize           = 31 - numBits
---
---        getConstant :: S.Set X.Location -> G.Gadget -> Maybe (G.Gadget, X.Location)
---        getConstant poolSet g@(G.LoadConst reg val)
---            -- | not $ (X.RegisterLocation reg) `S.member` poolSet = Nothing
---            | shiftR val shiftSize == fromIntegral value        = Just (g, X.RegisterLocation reg)
---            | otherwise                                         = Nothing
---        getConstant _ _                                         = Nothing
---
---        getShift :: S.Set X.Location -> G.Gadget -> Maybe (G.Gadget, X.Location)
---        getShift poolSet g@(G.RightShift reg val)
---            -- | not $ (X.RegisterLocation reg) `S.member` poolSet = Nothing
---            | shiftSize == fromIntegral val                     = Just (g, X.RegisterLocation reg)
---            | otherwise                                         = Nothing
---        getShift _ _                                            = Nothing
---
---
---sub :: Variable -> Variable -> Variable -> Predicate ()
---sub a b c = do
---    CodeGenState{..} <- get
---    makePredicate3 (add' locationPool) a b c
---    where
---        add' pool a b c = 
---            [ 
---                    moveB -- Move u to a temporary register
---                ++  moveC -- Move v to a temporary register
---                ++  [G.Minus bReg bReg cReg] -- We are more likely to find an minus involving 2 registers
---                ++  moveA -- Move the result into a
---            | 
---                    bLoc@(X.RegisterLocation bReg) <- a:b:pool
---                ,   cLoc@(X.RegisterLocation cReg) <- (c:pool) \\ [bLoc]
---                ,   moveB <- moveHelper pool bLoc b -- Move b into x
---                ,   moveC <- moveHelper pool cLoc c -- Move c into y
---                ,   moveA <- moveHelper pool a bLoc -- Move the result into a
---            ]
---
---mul :: Variable -> Variable -> Variable -> Predicate ()
---mul a b c = do
---    CodeGenState{..} <- get
---    makePredicate3 (mul' locationPool) a b c
---    where
---        mul' pool a b c = 
---            [ 
---                    moveX -- Move u to a temporary register
---                ++  moveY -- Move v to a temporary register
---                ++  [G.Times xReg $ S.fromList [xReg,yReg]] -- We are more likely to find an add involving 2 registers
---                -- ++  [G.Minus xReg xReg yReg] -- We are more likely to find an minus involving 2 registers
---                ++  moveA -- Move the result into a
---            | 
---                    (x,y) <- [(b,c), (c,b)]
---                ,   xLoc@(X.RegisterLocation xReg) <- a:x:pool
---                ,   yLoc@(X.RegisterLocation yReg) <- (y:pool) \\ [xLoc]
---                ,   moveX <- moveHelper pool xLoc x -- Move b into x
---                ,   moveY <- moveHelper pool yLoc y -- Move c into y
---                ,   moveA <- moveHelper pool a xLoc -- Move the result into a
---            ]
---
---xor :: Variable -> Variable -> Variable -> Predicate ()
---xor a b c = do
---    CodeGenState{..} <- get
---    makePredicate3 (xor' locationPool) a b c
---    where
---        xor' pool a b c = 
---            [ 
---                    moveX -- Move u to a temporary register
---                ++  moveY -- Move v to a temporary register
---                ++  [G.Xor xReg $ S.fromList [xReg,yReg]] -- We are more likely to find an add involving 2 registers
---                ++  moveA -- Move the result into a
---            | 
---                    (x,y) <- [(b,c), (c,b)]
---                ,   xLoc@(X.RegisterLocation xReg) <- a:x:pool
---                ,   yLoc@(X.RegisterLocation yReg) <- (y:pool) \\ [xLoc]
---                ,   moveX <- moveHelper pool xLoc x -- Move b into x
---                ,   moveY <- moveHelper pool yLoc y -- Move c into y
---                ,   moveA <- moveHelper pool a xLoc -- Move the result into a
---            ]
---
---add :: Variable -> Variable -> Variable -> Predicate ()
---add a b c = do
---    CodeGenState{..} <- get
---    makePredicate3 (add' locationPool) a b c
---    where
---        add' pool a b c = 
---            [ 
---                    moveX -- Move u to a temporary register
---                ++  moveY -- Move v to a temporary register
---                ++  [G.Plus xReg $ S.fromList [xReg,yReg]] -- We are more likely to find an add involving 2 registers
---                ++  moveA -- Move the result into a
---            | 
---                    -- Try swapping b and c also. This is useful if one of the
---                    -- locations is a register and the other is not, it allows
---                    -- the search to find solutions that move the non-register
---                    -- location into the destination (if it is a register) and
---                    -- keep the register location in the same. Basically it
---                    -- makes the below search symmetric.
---                    (x,y) <- [(b,c), (c,b)]
---                    -- Because a is going to be overwritten with the result, we
---                    -- can consider it in the location pool and use it as
---                    -- scratch space for the computation. 
---                ,   xLoc@(X.RegisterLocation xReg) <- a:x:pool
---                    -- Because we aren't possibly overwriting v we can use v if
---                    -- it is a register, otherwise choose a temp register for it
---                ,   yLoc@(X.RegisterLocation yReg) <- (y:pool) \\ [xLoc]
---                    -- Shuffle locations around into temporary registers
---                ,   moveX <- moveHelper pool xLoc x -- Move b into x
---                ,   moveY <- moveHelper pool yLoc y -- Move c into y
---                ,   moveA <- moveHelper pool a xLoc -- Move the result into a
---            ]
 --
 --jump :: Label -> Predicate JumpReason -> Predicate ()
 --jump indexLabel reason = do
@@ -754,72 +667,73 @@ doesNotClobber' locationPool clobber =
 --        replaceJumpHolders _ _ _ meta = return meta
 --
 ---- | Create a variable for use with the predicate functions.
---makeLocal :: Predicate Variable
---makeLocal = do
---    state@CodeGenState{..}      <- get
---    -- Find the next available offset from EBP to use as the local stack
---    -- variable
---    let (readable,writeable)    = M.foldrWithKey' findValidOffsets (S.empty, S.empty) $ D.gadgetMap library
---    let validOffsets            = map fromIntegral $ reverse $ S.toAscList $ readable `S.intersection` writeable
---    stackOffset                 <- lift $ take 1 $ filter (<=localVariableOffset - 4) validOffsets
---    let stackVariable           = X.MemoryLocation X.EBP $ fromIntegral stackOffset
---    -- Allocate an integer id for the new variable
---    let variableId              = (maximum $ 0 : M.keys variableMap) + 1
---    --variableLocation            <- lift $ locationPool++[stackVariable]
---    variableLocation            <- lift $ [stackVariable]
---    put $! state {
---            variableMap         = M.insert variableId variableLocation variableMap
---        ,   locationPool        = locationPool \\ [variableLocation]
---        ,   localVariableOffset = if variableLocation == stackVariable then stackOffset else localVariableOffset
---        }
---    return variableId
---    where
---        -- | Places a Memory location offset into one a readable or writeable
---        -- list. If folded over a list of gadgets, it will produces a tuple of
---        -- two lists that contain all of the offsets that are readable and
---        -- writeable respectively.
---        findValidOffsets (G.LoadMemReg _ _ offset)  _ (readable,writeable)  = (offset `S.insert` readable,writeable)
---        findValidOffsets (G.StoreMemReg _ offset _) _ (readable,writeable)  = (readable,offset `S.insert` writeable)
---        findValidOffsets _                          _ sets                  = sets
---
----- | Create n variables for use with the predicate functions.
---makeLocals :: Int -> Predicate [Variable]
---makeLocals n = sequence $ replicate n makeLocal
---
----- | Create a variable for use with the predicate functions.
---makeInput :: Predicate Variable
---makeInput = do
---    state@CodeGenState{..}      <- get
---    -- Find the next available offset from EBP to use as the local stack
---    -- variable
---    let stackOffset             = inputVariableOffset + 4
---    let stackVariable           = X.MemoryLocation X.EBP $ fromIntegral stackOffset
---    -- Allocate an integer id for the new variable
---    let variableId              = (maximum $ 0 : M.keys variableMap) + 1
---    put $! state {
---            variableMap         = M.insert variableId stackVariable variableMap
---        ,   inputVariableOffset = stackOffset
---        }
---    return variableId
---
----- | Create n variables for use with the predicate functions.
---makeInputs :: Int -> Predicate [Variable]
---makeInputs n = sequence $ replicate n makeInput
---
+makeLocal :: Partial Variable
+makeLocal = do
+    state@CodeGenState{..}      <- get
+    -- Find the next available offset from EBP to use as the local stack
+    -- variable
+    let (readable,writeable)    = M.foldrWithKey' findValidOffsets (S.empty, S.empty) $ D.gadgetMap library
+    let validOffsets            = map fromIntegral $ reverse $ S.toAscList $ readable `S.intersection` writeable
+    stackOffset                 <- lift $ take 1 $ filter (<=localVariableOffset - 4) validOffsets
+    let stackAddress            = X.OffsetAddress X.EBP $ fromIntegral stackOffset
+    -- Allocate an integer id for the new variable
+    let variableId              = Variable $ (maximum $ 0 : (map unVariable $ M.keys variableMap)) + 1
+    --variableLocation            <- lift $ locationPool++[stackVariable]
+    put $! state {
+            variableMap         = M.insert variableId (Memory stackAddress) variableMap
+        ,   locationPool        = locationPool \\ [X.MemoryLocation stackAddress]
+        ,   localVariableOffset = stackOffset
+        }
+    return variableId
+    where
+        -- | Places a Memory location offset into one a readable or writeable
+        -- list. If folded over a list of gadgets, it will produces a tuple of
+        -- two lists that contain all of the offsets that are readable and
+        -- writeable respectively.
+        findValidOffsets (G.LoadMemReg _ (X.OffsetAddress _ offset))  _ (readable,writeable)  =
+            (offset `S.insert` readable,writeable)
+        findValidOffsets (G.StoreMemReg (X.OffsetAddress _ offset) _) _ (readable,writeable)  =
+            (readable,offset `S.insert` writeable)
+        findValidOffsets _                                            _ sets                  = sets
+
+-- | Create n variables for use with the predicate functions.
+makeLocals :: Int -> Partial [Variable]
+makeLocals n = sequence $ replicate n makeLocal
+
+-- | Create a variable for use with the predicate functions.
+makeInput :: Partial Variable
+makeInput = do
+    state@CodeGenState{..}      <- get
+    -- Find the next available offset from EBP to use as the local stack
+    -- variable
+    let stackOffset             = inputVariableOffset + 4
+    let stackVariable           = Memory $ X.OffsetAddress X.EBP $ fromIntegral stackOffset
+    -- Allocate an integer id for the new variable
+    let variableId              = Variable $ (maximum $ 0 : (map unVariable $ M.keys variableMap)) + 1
+    put $! state {
+            variableMap         = M.insert variableId stackVariable variableMap
+        ,   inputVariableOffset = stackOffset
+        }
+    return variableId
+
+-- | Create n variables for use with the predicate functions.
+makeInputs :: Int -> Partial [Variable]
+makeInputs n = sequence $ replicate n makeInput
+
 ---- | Creates a 'label' which is just an integer which maps to a position in the
 ---- predicate stream.
---makeLabel ::Predicate Label
+--makeLabel ::Partial Label
 --makeLabel = do
---    state@CodeGenState{..}    <- get
---    let indexLabel = 1 + (maximum $ 0 : M.keys labelMap)
+--    state@CodeGenState{..}  <- get
+--    let indexLabel          = Label $ 1 + (maximum $ 0 : (map unLabel $ M.keys labelMap))
 --    put $ state {
 --        labelMap        = M.insert indexLabel currentPredicate labelMap 
 --    }
 --    return indexLabel
 --    
---makeLabels :: (Integral i) => i -> Predicate [Label]
+--makeLabels :: (Integral i) => i -> Partial [Label]
 --makeLabels n = sequence $ replicate (fromIntegral n) makeLabel
---
+
 ---- | Mark the current position as the given label.
 --label :: Label -> Predicate ()
 --label l = do
@@ -829,6 +743,24 @@ doesNotClobber' locationPool clobber =
 --    }
 --    return ()
 --
+
+generate :: D.GadgetLibrary -> StdGen -> Program -> Maybe GeneratedCode
+generate library gen program = listToMaybe $ do
+    let program'    = do
+        --eoc <- makeLabel
+        program
+        --label eoc
+    (_,solution)    <- runStateT program' $ initialState library gen
+    --let eitherCode  = replaceAllJumpHolders solution -- Turn solution into [Either Meta Jump]
+    let eitherCode  = generatedCode solution -- Turn solution into [Either Meta Jump]
+    let byteCode    = B.concat $ rights eitherCode -- Turn the Either values into Meta lists and concats
+    -- Remove solutions with hanging jumps
+    guard $ (null . lefts) eitherCode
+    return GeneratedCode {
+            byteCode            = byteCode
+        ,   localVariableSize   = 0 - localVariableOffset solution
+    }
+
 ----------------------------------------------------------------------------------
 ---- Predicate to Gadget translation
 ----------------------------------------------------------------------------------

@@ -40,8 +40,10 @@ main = do
 
 testProgram :: PredicateProgram
 testProgram = do
-    [i1]  <- makeInputs 1
+    --[i1]  <- makeInputs 1
     [v1]  <- makeLocals 1
-    --set v1 47
-    load v1 i1
+    set v1 2
+    --load v1 i1
+    --store i1 v2
     ret v1
+

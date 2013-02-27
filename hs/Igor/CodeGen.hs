@@ -27,6 +27,7 @@ module Igor.CodeGen
 , set
 , ret
 , load
+, store
 -- *** Jump Reasons
 , (-<-)
 , (-<=-)
@@ -156,6 +157,26 @@ ret a = do
     let moveAToEAX = moveHelper locationPool (X.RegisterLocation X.EAX) aLoc
     calculateJump moveAToEAX (G.Jump X.Always) endOfCodeLabel
 
+-- | Stores the value of the second variable into the memory location pointed to
+-- by the first.
+store :: Variable -> Variable -> Predicate ()
+store dst src = do
+    CodeGenState{..}    <- get
+    makePredicate2 (store' locationPool ) dst src
+
+    where
+        store' pool dstLoc srcLoc =
+            [
+                    moveDstToReg ++ moveSrcToDst
+            | 
+                    regLoc@(X.RegisterLocation reg) <- dstLoc:pool
+                ,   memLoc                          <- [X.MemoryLocation reg 0]
+                ,   pool'                           <- [pool \\ [regLoc]]
+                ,   moveDstToReg                    <- moveHelper pool' regLoc dstLoc 
+                ,   moveSrcToDst                    <- moveHelper pool' memLoc srcLoc 
+            ]
+
+
 -- | Dereferences the second variable and stores it in the first. Similar to a
 -- 'move' instruction.
 load :: Variable -> Variable -> Predicate ()
@@ -204,13 +225,13 @@ set var value = do
                 ,   saveShiftLoc            <- (pool \\ [sLoc, cLoc, saveConstantLoc])
                 ,   pool'                   <- [pool \\ [sLoc, cLoc, saveConstantLoc, saveShiftLoc]]
                 ,   saveConstant            <- moveHelper pool' saveConstantLoc cLoc
-                ,   saveShift               <- if sLoc == cLoc then [] else moveHelper pool' saveShiftLoc sLoc
+                ,   saveShift               <- if sLoc == cLoc then [[]] else moveHelper pool' saveShiftLoc sLoc
                 -- If the variable is the same s the sLoc or cLoc then we don't
                 -- want to overwrite them by restoring their value prior to
                 -- computation
-                ,   restoreConstant         <- if var == cLoc then [] else moveHelper pool' cLoc saveConstantLoc
+                ,   restoreConstant         <- if var == cLoc then [[]] else moveHelper pool' cLoc saveConstantLoc
                 ,   restoreShift            <- if var == sLoc || sLoc == cLoc
-                                                then []
+                                                then [[]]
                                                 else moveHelper pool' sLoc saveShiftLoc
                 ,   moveShift               <- moveHelper pool' sLoc cLoc 
                 ,   moveVar                 <- moveHelper pool' var sLoc 

@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE RecordWildCards #-}
 module Igor.CodeGen.GCC
 ( 
@@ -10,6 +11,9 @@ import              Data.Maybe
 import              Igor.CodeGen
 import              Igor.Gadget.Discovery
 import              System.FilePath
+import              System.IO
+import              System.IO.Temp
+import              System.Process
 import              System.Random
 
 compile :: GadgetLibrary
@@ -23,7 +27,13 @@ compile library file methods = do
     if length compiledMethods == length maybeMethods
         then do
             let objContents = objTemplate file $ map objMethod compiledMethods
-            writeFile file objContents
+            errors          <- withTempFile "." (file++".S") $
+                                (\path handle -> do 
+                                    !_ <- hPutStr handle objContents
+                                    !_ <- hClose handle
+                                    readProcess "as" ["--32", "-o", file, path] ""
+                                )
+            --writeFile file objContents
             return True
         else return False
     where

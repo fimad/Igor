@@ -50,6 +50,8 @@ defines (LoadConst      r _)    = [X.RegisterLocation r]
 defines (LoadMemReg     r _ _)  = [X.RegisterLocation r]
 defines (StoreMemReg    r v _)  = [X.MemoryLocation r v]
 defines (Plus           r _)    = [X.RegisterLocation r]
+defines (Xor            r _)    = [X.RegisterLocation r]
+defines (Times          r _)    = [X.RegisterLocation r]
 defines (Minus          r _ _)  = [X.RegisterLocation r]
 defines (RightShift     r _)    = [X.RegisterLocation r]
 defines _                       = []
@@ -59,8 +61,10 @@ defines _                       = []
 match :: State -> [Match]
 match state = do
     (location,expression)   <- (M.assocs state)
-    let allOtherExpressions = location `M.delete` state
     (gadget,nonClobbered)   <- matchGadgets location expression
+    let allOtherExpressions = location `M.delete` state
+    --let allOtherExpressions = foldl (flip M.delete) state nonClobbered
+    --let clobbered           = M.keys $ allOtherExpressions
     let clobbered           = M.keys $ foldl (flip M.delete) state nonClobbered
     -- Ensure that we don't perform any bad reads or clobber any variable memory
     -- location
@@ -73,8 +77,11 @@ match state = do
         -- of bounds memory location causing a segfault. Certainly undesirable.
         isIllegalExpression (X.InitialValue (X.RegisterLocation _)) = False
         isIllegalExpression (X.Constant _)                          = False
+        isIllegalExpression (X.Clobbered)                           = False
         isIllegalExpression (X.Plus a b)                            = isIllegalExpression a || isIllegalExpression b
         isIllegalExpression (X.Minus a b)                           = isIllegalExpression a || isIllegalExpression b
+        isIllegalExpression (X.Xor a b)                             = isIllegalExpression a || isIllegalExpression b
+        isIllegalExpression (X.Times a b)                           = isIllegalExpression a || isIllegalExpression b
         isIllegalExpression (X.RightShift a b)                      = isIllegalExpression a || isIllegalExpression b
         isIllegalExpression (X.Comparison a b)                      = isIllegalExpression a || isIllegalExpression b
         isIllegalExpression (X.Conditional _ a)                     = isIllegalExpression a
@@ -111,10 +118,10 @@ matchGadgets source expression = catMaybes $ map ($ expression) gadgetMatchers
         matchLoadReg _ _ =
                 Nothing
 
-        matchLoadConst srcLoc@(X.RegisterLocation srcReg) (X.Constant value) =
-                Just (LoadConst srcReg value, [srcLoc])
-        matchLoadConst _ _ =
-                Nothing
+        matchLoadConst srcLoc@(X.RegisterLocation srcReg) (X.Constant value)
+            | srcReg /= X.EIP   = Just (LoadConst srcReg value, [srcLoc])
+            | otherwise         = Nothing
+        matchLoadConst _ _      = Nothing
 
         matchLoadMemReg
             srcLoc@(X.RegisterLocation srcReg)

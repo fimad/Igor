@@ -17,7 +17,7 @@ main = do
             putStrLn "Loading library..."
             library <- loadLibrary libraryFile
             putStrLn "Generating code..."
-            result  <- compile library output [("test", testProgram)]
+            result  <- compile library output [("factorial", factorial)]
             case result of
                 False   -> putStrLn "Could not generate :("
                 _       -> putStrLn $ "Written to "++output
@@ -38,12 +38,17 @@ main = do
             putStr "\t:\t"
             putStrLn $ mdAssembly m
 
-testProgram :: PredicateProgram
-testProgram = do
-    --[i1]  <- makeInputs 1
-    [v1]  <- makeLocals 1
-    set v1 2
-    --load v1 i1
-    --store i1 v2
-    ret v1
+factorial :: PredicateProgram
+factorial = do
+    [n]             <- makeInputs 1
+    [tmp,total,one] <- makeLocals 3
+    [begin]         <- makeLabels 1
+    set     one     1
+    move    tmp     n
+    move    total   one
+    label   begin
+    mul     total   total   tmp
+    sub     tmp     tmp     one
+    jump    begin   (tmp ->- one)
+    ret     total
 

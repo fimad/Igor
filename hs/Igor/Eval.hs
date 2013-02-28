@@ -156,9 +156,15 @@ eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Iinc})     
     let dstValue                        =  Plus (Constant 1) dstExpr
     return $ (M.insert dstLocation dstValue state', False)
 
-eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Imul})     = do
+eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Iimul})     = do
     let state'  = clobbersFlags state
-    buildExpr2 state' Times (H.inOperands instruction)
+    src                                 <- listToMaybe $ H.inOperands instruction
+    let clobberedLocation               = RegisterLocation EDX
+    let dstLocation                     = RegisterLocation EAX
+    dstExpr                             <- valueOf (Just dstLocation) state'
+    srcExpr                             <- operandToExpression src state'
+    let dstValue                        =  Times dstExpr srcExpr
+    return $ (M.insert clobberedLocation Clobbered $ M.insert dstLocation dstValue state', False)
 
 eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ixor})     = do
     let state'  = clobbersFlags state

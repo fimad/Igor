@@ -1,5 +1,6 @@
 import              Data.Binary
 import qualified    Data.ByteString as B
+import qualified    Igor.Expr       as X
 import              Igor.CodeGen
 import              Igor.CodeGen.GCC
 import              Igor.ByteModel (hdisConfig)
@@ -18,7 +19,7 @@ main = do
             library <- loadLibrary libraryFile
             putStrLn "Generating code..."
             --result  <- compile library output [("insertSort", insertSort)]
-            result  <- compile library output [("test", testProgram)]
+            result  <- compile library output [("factorial", factorial)]
             case result of
                 False   -> putStrLn "Could not generate :("
                 _       -> putStrLn $ "Written to "++output
@@ -39,11 +40,21 @@ main = do
             putStr "\t:\t"
             putStrLn $ mdAssembly m
 
-testProgram :: Program
-testProgram = do
-    --[i1]  <- makeInputs 1
-    [v1, v2, v3]  <- makeLocals 3
-    add v1 (43 :: Integer) (4 :: Integer)
+factorial :: Program
+factorial = do
+    [n]                     <- makeInputs 1
+    [tmp, total]            <- makeLocals 2
+    [begin]                 <- makeLabels 1
+
+    move    total   (1 :: Integer)
+    move    tmp     n
+
+    label   begin
+--    mul     total   total   tmp
+    sub     tmp     tmp     (1 :: Integer)
+    jump    begin   (tmp ->- (0 :: Integer))
+
+    ret     total
     --
     --load v1 i1
     --store i1 v2

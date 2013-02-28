@@ -95,7 +95,8 @@ libraryLookup :: G.Gadget -> GadgetLibrary -> Maybe (S.Set (B.ByteString, G.Clob
 libraryLookup g@(G.LoadReg a b) library@GadgetLibrary{..}
     | a == b            = return $ S.singleton (B.empty,[])
     | otherwise         = M.lookup g gadgetMap
-libraryLookup g library@GadgetLibrary{..}   = M.lookup g gadgetMap
+libraryLookup g@(G.Jump _ 0) library@GadgetLibrary{..}  = return $ S.singleton (B.empty,[])
+libraryLookup g library@GadgetLibrary{..}               = M.lookup g gadgetMap
 
 libraryMerge :: GadgetLibrary -> GadgetLibrary -> GadgetLibrary
 libraryMerge a b = GadgetLibrary $ M.unionWith S.union (gadgetMap a) (gadgetMap b)

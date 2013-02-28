@@ -10,9 +10,9 @@ module Igor.CodeGen
 , GeneratedCode(..)
 -- * Methods
 , generate
---, makeLabel
---, makeLabels
---, label
+, makeLabel
+, makeLabels
+, label
 , makeLocal
 , makeLocals
 , makeInput
@@ -20,33 +20,33 @@ module Igor.CodeGen
 -- ** Params
 , Param (..)
 , Paramable
-, toParam
 , withParam
-, withParamAsRegister
-, withParamAsSavedRegister
-, withSavedRegister
-, withRegister
+, asRegister
+--, asSavedRegister
+, saveAsRegister
 , withTempRegister
 , withTempRegister'
+, reserveRegisterFor
 -- ** Statements
 , move
 , add
 , sub
 , xor
 , mul
---, jump
+, jump
 , noop
---, ret
+, ret
 -- *** Jump Reasons
---, (-<-)
---, (-<=-)
---, (->-)
---, (->=-)
---, (-==-)
---, (-!=-)
---, always
+, (-<-)
+, (-<=-)
+, (->-)
+, (->=-)
+, (-==-)
+, (-!=-)
+, always
 ) where
 
+import              Control.Applicative
 import              Control.Monad.State
 import              Data.Bits (shiftR)
 import qualified    Data.ByteString         as B
@@ -89,13 +89,13 @@ type VariableMap        = M.Map Variable Param
 -- (sequences of 'Statement's) should have type Program
 type Program            = StateT CodeGenState [] ()
 type Statement          = Program
+
 -- | A Partial is a part of a statement, it performs some underlying code
 -- generation task and returns a value.
 type Partial a          = StateT CodeGenState [] a
 
 -- | The types of parameters that can be passed to a partial statement
 data Param              = Constant  Integer
-                        | Location  Label
                         | Register  X.Register
                         | Memory    X.Address
 
@@ -104,7 +104,12 @@ class Paramable a where
     -- modifies the code generation state and returns a Param corresponding to
     -- the value in a. The second handles tearing down the Param in the event
     -- that temporary registers were used.
-    toParam :: a -> (Partial Param, Partial ())
+    --toParam :: a -> (Partial Param, Partial ())
+    -- | This method takes a 'Paramable' type and a method that acts on that
+    -- as a 'Param'. The result is a Partial that has the same return value as
+    -- the method but also handles any set up and tear down associated with
+    -- building the 'Param'
+    withParam :: Paramable a => a -> (Param -> Partial b) -> Partial b
 
 -- | The result of compilation.
 data GeneratedCode       = GeneratedCode {
@@ -114,19 +119,18 @@ data GeneratedCode       = GeneratedCode {
 
 -- | The condition upon which the jump depends
 data JumpReason         = Always
-                        | Because X.Reason X.Location X.Location
+                        | Because X.Reason Param Param
 
--- | A place holder for a jump. In the event that a predicate attempts to jump
--- ahead to code that has not been generated yet, it will instead drop a
--- JumpHolder which contains enough information so that a second pass through
--- the stream can replace the JumpHolder with an appropriate Gadget realization. 
+-- | Because it is not possible to know the byte offsets for code while it is
+-- being generated, jumps are first translated as a JumpHolder with a fixed
+-- size. In a second pass it is then translated into an appropriate sequence of
+-- bytes.
 data JumpHolder = JumpHolder {
         jumpFlavor      :: Integer -> G.Gadget -- ^ The type of jump that we should place here
-    ,   jumpIndex       :: Label -- ^ The predicate that contains the jump
-    ,   jumpByteOffset  :: Integer -- ^ The byte offset of the jump
+    ,   jumpPosition    :: Integer -- ^ The byte offset of the jump
     ,   jumpLength      :: Integer -- ^ How big is the jump holder
-    ,   jumpTarget      :: Label -- ^ The index of the of the predicate we would like to jump to
-    ,   jumpPrefix      :: B.ByteString
+    ,   jumpTarget      :: Label -- ^ The offset into the generated code to jump to
+    ,   jumpClobberable :: LocationPool -- ^ A copy of the clobberable locations at the time the jump was made
 }
 
 data CodeGenState       = CodeGenState {
@@ -165,37 +169,42 @@ initialState library gen = CodeGenState {
 --------------------------------------------------------------------------------
 
 instance Paramable Integer where
-    toParam a = (return $ Constant a, return ())
+    withParam a = ($ Constant a)
 
 instance Paramable Variable where
-    toParam var = 
-        (
-            do
-                CodeGenState {..}  <- get
-                lift $ maybeToList $ M.lookup var variableMap
-        , 
-            return ()
-        )
-
-instance Paramable Label where
-    toParam label = (return $ Location label, return ())
+    withParam var method = do
+        CodeGenState {..}   <- get
+        param               <- lift $ maybeToList $ M.lookup var variableMap
+        method param
 
 instance Paramable X.Location where
-    toParam (X.MemoryLocation addr)   = (return $ Memory addr, return ())
-    toParam (X.RegisterLocation reg)  = (return $ Register reg, return ())
+    withParam (X.MemoryLocation addr)   = ($ Memory addr)
+    withParam (X.RegisterLocation reg)  = ($ Register reg)
+
+instance Paramable Param where
+    withParam = flip ($)
 
 -- TODO: Write instances of Paramable for memory locations
 
--- | Automaticall handles initializing and cleaning up the predicate. It is
--- recommended to use withParam over toParam as setup and tear down are
--- guaranteed.
-withParam :: Paramable a => a -> (Param -> Partial b) -> Partial b
-withParam paramable method = do
-    let (initialize,finish) = toParam paramable
-    param                   <- initialize
-    result                  <- method param
-    finish
+-- | If the given register is in the location pool it is pulled for the duration
+-- of the given partial.
+reserveRegisterFor :: X.Register -> Partial b -> Partial b
+reserveRegisterFor reg method = do
+    state@CodeGenState{..}  <- get
+    put                     $! state { locationPool = locationPool \\ [X.RegisterLocation reg] }
+    result                  <- method
+    -- Restore temp to the location pool if it was originally free
+    state                   <- get
+    put                     $! state { locationPool = locationPool }
+    --if (X.RegisterLocation reg) `elem` locationPool
+    --    then do
+    --        state@CodeGenState{..}  <- get
+    --        put $ state {
+    --            locationPool = (X.RegisterLocation reg):locationPool
+    --        }
+    --    else return ()
     return result
+    
 
 -- | Allocates and a temporary register for use with a method and then
 -- subsequently frees it once the method is finished. The first parameter is a
@@ -206,176 +215,251 @@ withTempRegister :: [X.Register] -> (X.Register -> Partial b) -> Partial b
 withTempRegister nonFreeRegs method = do
     state@CodeGenState{..}  <- get
     tempReg                 <- lift $ nonFreeRegs ++ map (\(X.RegisterLocation r) -> r) locationPool
-    put                     $! state { locationPool = locationPool \\ [X.RegisterLocation tempReg] }
-    result                  <- method tempReg
-    -- Restore temp to the location pool if it was originally free
-    if (X.RegisterLocation tempReg) `elem` locationPool
-        then do
-            state@CodeGenState{..}  <- get
-            put $ state {
-                locationPool = (X.RegisterLocation tempReg):locationPool
-            }
-        else return ()
-    return result
+    reserveRegisterFor tempReg $ method tempReg
 
 -- | Same as 'withTempRegister' except that the first argument has been
 -- pre-applied as []
 withTempRegister' :: (X.Register -> Partial b) -> Partial b
 withTempRegister' = withTempRegister []
 
-saveParamAsRegister :: Paramable p => p -> (X.Register -> Partial b) -> Partial b
-saveParamAsRegister paramable method =
-    withParam paramable $ flip saveAsRegister method
-
 -- | Create's a temporary register passes it to method and then once method is
 -- complete, stores the value in param.
-saveAsRegister :: Param -> (X.Register -> Partial b) -> Partial b
-saveAsRegister param method =
-    withTempRegister' (savingMethod param)
+saveAsRegister :: Paramable p => p -> (X.Register -> Partial b) -> Partial b
+saveAsRegister paramable method =
+    withParam paramable $ flip saveAsRegister' method
     where
-        savingMethod (Register dstReg)  reg = do
-            result <- method reg
-            translateGadget $ G.LoadReg dstReg reg
-            return result
-        savingMethod (Memory dstAddr)   reg = do
-            result <- method reg
-            withTempRegister [reg] $ \tmpReg -> do
-                translateGadget $ G.LoadReg tmpReg reg
-                translateGadget $ G.StoreMemReg dstAddr tmpReg
-                return result
-        savingMethod _                  reg = fail "Attempting to save to a non-location."
+        saveAsRegister' :: Param -> (X.Register -> Partial b) -> Partial b
+        saveAsRegister' param method =
+            withTempRegister' (savingMethod param)
+            where
+                savingMethod (Register dstReg)  reg = do
+                    result <- method reg
+                    compileGadget $ G.LoadReg dstReg reg
+                    return result
+                savingMethod (Memory (X.OffsetAddress baseReg offset))   reg = do
+                    result <- method reg
+                    withTempRegister [reg] $ \tmpReg -> do
+                        compileGadget $ G.LoadReg tmpReg reg
+                        withTempRegister [baseReg] $ \tempBaseReg -> do
+                            compileGadget $ G.LoadReg tempBaseReg baseReg
+                            compileGadget $ G.StoreMemReg (X.OffsetAddress tempBaseReg offset) tmpReg
+                    return result
+                savingMethod _                  reg = fail "Attempting to save to a non-location."
 
--- | Allows you to pull a Paramable value directly into a register. Basically
--- syntactic sugar for withParam p $ \p' -> withRegister p' $ method.
-withParamAsRegister :: Paramable p => p -> (X.Register -> Partial b) -> Partial b
-withParamAsRegister paramable method =
-    withParam paramable $ flip withRegister method
 
 -- | Allows you to pull a Paramable value directly into a register and then save
 -- it. Basically syntactic sugar for withParam p $ \p' -> withSavedRegister p' $
 -- method.
-withParamAsSavedRegister :: Paramable p => p -> (X.Register -> Partial b) -> Partial b
-withParamAsSavedRegister paramable method =
-    withParam paramable $ flip withSavedRegister method
-
--- | Same as 'withRegister' except that the value of register at the end of the
--- method call is moved to the Param's original location.
-withSavedRegister :: Param -> (X.Register -> Partial b) -> Partial b
-withSavedRegister param method = 
-    withRegister param (savingMethod param)
+--asSavedRegister :: Paramable p => p -> (X.Register -> Partial b) -> Partial b
+--asSavedRegister paramable method =
+--    withParam paramable $ flip asSavedRegister' method
+--    where
+--        asSavedRegister' :: Param -> (X.Register -> Partial b) -> Partial b
+--        asSavedRegister' param method = 
+--            asRegister param (savingMethod param)
+--            where
+--                savingMethod (Register dstReg)  reg = do
+--                    result <- method reg
+--                    compileGadget $ G.LoadReg dstReg reg
+--                    return result
+--                savingMethod (Memory (X.OffsetAddress baseReg offset))   reg = do
+--                    result <- method reg
+--                    withTempRegister [reg] $ \tmpReg ->
+--                        withTempRegister [baseReg] $ \tempBaseReg -> do
+--                            compileGadget $ G.LoadReg tmpReg reg
+--                            compileGadget $ G.LoadReg tempBaseReg baseReg
+--                            compileGadget $ G.StoreMemReg (X.OffsetAddress tempBaseReg offset) tmpReg
+--                    return result
+--                savingMethod _                  reg = fail "Attempting to save to a non-location."
+--
+-- | Moves the value described by a 'Paramable' into a temporary register that
+-- will be freed at the end of the method. Note that this method will fail if
+-- used on 'Location's this is because it is not possible to determine their
+-- values at compile time.
+asRegister :: Paramable p => p -> (X.Register -> Partial b) -> Partial b
+asRegister paramable method =
+    withParam paramable $ flip asRegister' method
     where
-        savingMethod (Register dstReg)  reg = do
-            result <- method reg
-            translateGadget $ G.LoadReg dstReg reg
-            return result
-        savingMethod (Memory dstAddr)   reg = do
-            result <- method reg
-            withTempRegister [reg] $ \tmpReg -> do
-                translateGadget $ G.LoadReg tmpReg reg
-                translateGadget $ G.StoreMemReg dstAddr tmpReg
-                return result
-        savingMethod _                  reg = fail "Attempting to save to a non-location."
+        asRegister' :: Param -> (X.Register -> Partial b) -> Partial b
+        asRegister' (Register reg)     method =
+            let
+                -- | Allow reg to be used as a scratch register if it is a general
+                -- purpose register, otherwise we have to allocate a new one.
+                possiblyReg = if reg `elem` X.generalRegisters
+                                then [reg]
+                                else []
+            in
+                withTempRegister possiblyReg $ \tempReg -> do
+                    reserveRegisterFor reg $
+                        compileGadget         $ G.LoadReg tempReg reg
+                    method tempReg
 
--- | Moves the value described by Param into a temporary register that will be
--- freed at the end of the method. Note that this method will fail if used on
--- 'Location's this is because it is not possible to determine their values at
--- compile time.
-withRegister :: Param -> (X.Register -> Partial b) -> Partial b
-withRegister (Location _)       method = fail "Cannot turn a location into a register."
-withRegister (Register reg)     method =
-    let
-        -- | Allow reg to be used as a scratch register if it is a general
-        -- purpose register, otherwise we have to allocate a new one.
-        possiblyReg = if reg `elem` X.generalRegisters
-                        then [reg]
-                        else []
-    in
-        withTempRegister possiblyReg $ \tempReg -> do
-            translateGadget         $ G.LoadReg tempReg reg
-            method tempReg
+        asRegister' (Memory address)   method = 
+            withTempRegister' $ \tempReg -> do
+                possibleTranslations tempReg address
+                method tempReg
+            where
+            -- Tries every possible way of accessing a given memory address
+                possibleTranslations tempReg addr@(X.OffsetAddress baseReg offset) = 
+                    withTempRegister [baseReg] $ \tempBaseReg -> do
+                        tempDstReg <- withTempRegister [tempReg] $ \tempDstReg -> do
+                            compileGadget $ G.LoadReg tempBaseReg baseReg
+                            compileGadget $ G.LoadMemReg tempDstReg (X.OffsetAddress tempBaseReg offset)
+                            return tempDstReg
+                        reserveRegisterFor tempDstReg $
+                            compileGadget $ G.LoadReg tempReg tempDstReg
+                possibleTranslations tempReg addr@(X.IndexedAddress baseReg indexReg scale offset) = 
+                    withTempRegister [tempReg] $ \tempDstReg ->
+                    withTempRegister [baseReg] $ \tempBaseReg -> 
+                    withTempRegister [indexReg] $ \tempIndexReg -> do
+                            compileGadget $ G.LoadReg tempBaseReg baseReg
+                            compileGadget $ G.LoadReg tempIndexReg indexReg
+                            compileGadget $ G.LoadMemReg tempDstReg (X.IndexedAddress tempBaseReg tempIndexReg scale offset)
+                            compileGadget $ G.LoadReg tempReg tempDstReg
 
-withRegister (Memory address)   method = 
-    withTempRegister' $ \tempReg -> do
-        possibleTranslations tempReg address
-        method tempReg
+--        asRegister' (Constant value)   method =  do
+--            CodeGenState{..}                <- get
+--            let poolSet                     = S.fromList locationPool
+--            let gmap                        = D.gadgetMap library
+--            (constantGadget, constantLoc)   <- lift $ mapMaybe (getConstant poolSet) $ M.keys gmap
+--            (shiftGadget, shiftLoc)         <- lift $ mapMaybe (getShift poolSet) $ M.keys gmap
+--
+--            --withTempRegister =<< possibly shiftLoc $ \constantReg -> do
+--            possiblyConstantLoc <- possibly constantLoc
+--            withTempRegister possiblyConstantLoc $ \savedConstant -> do
+--                compileGadget $ G.LoadReg savedConstant constantLoc
+--                compileGadget $ constantGadget
+--                compileGadget $ G.LoadReg shiftLoc constantLoc
+--                compileGadget $ G.LoadReg constantLoc savedConstant
+--
+--            possiblyShiftLoc <- possibly shiftLoc
+--            withTempRegister possiblyShiftLoc $ \savedShift -> do
+--                compileGadget $ G.LoadReg savedShift shiftLoc
+--                compileGadget $ shiftGadget
+--
+--            withTempRegister possiblyShiftLoc $ \valueReg -> do
+--                compileGadget $ G.LoadReg valueReg shiftLoc
+--                method valueReg
+
+        asRegister' (Constant value)   method = 
+            withTempRegister' $ \valueReg -> do
+                withTempRegister' $ \savedConstant ->
+                    withTempRegister' $ \savedShift -> do
+                        CodeGenState{..}                <- get
+                        let poolSet                     = S.fromList locationPool
+                        let gmap                        = D.gadgetMap library
+                        (constantGadget, constantLoc)   <- lift $ mapMaybe (getConstant poolSet) $ M.keys gmap
+                        (shiftGadget, shiftLoc)         <- lift $ mapMaybe (getShift poolSet) $ M.keys gmap
+                        withTempRegister [shiftLoc] $ \tempShiftReg -> do
+                            -- Save the constant and shift registers in case they are special
+                            unless (valueReg == constantLoc) $
+                                compileGadget $ G.LoadReg savedConstant constantLoc
+                            unless (valueReg == shiftLoc) $
+                                compileGadget $ G.LoadReg savedShift shiftLoc
+                            -- Actually perform the constant load and the shift
+                            compileGadget $ constantGadget
+                            compileGadget $ G.LoadReg tempShiftReg constantLoc
+                            compileGadget $ shiftGadget
+                            -- Move the constant into a temporary register
+                            compileGadget $ G.LoadReg valueReg shiftLoc
+                            -- Restore the constant and shift registers
+                            unless (valueReg == constantLoc) $
+                                compileGadget $ G.LoadReg constantLoc savedConstant
+                            unless (valueReg == shiftLoc) $
+                                compileGadget $ G.LoadReg shiftLoc savedShift
+                -- Release the other temp registers and perform the desired method on
+                -- the valueReg which now holds the desired constant!
+                method valueReg
+
+--            constantReg <-
+--                withTempRegister (possibly constantLoc) $ \valueReg -> do
+--                    if constantLoc == valueReg
+--                        then 
+--                            compileGadget $ constantGadget
+--                        else
+--                            withTempRegister' $ \savedConstant -> do
+--                                compileGadget $ G.LoadReg savedConstant constantLoc
+--                                compileGadget $ constantGadget
+--                                compileGadget $ G.LoadReg valueReg constantLoc
+--                                compileGadget $ G.LoadReg constantLoc savedConstant
+--                    return valueReg
+--
+--            valueReg    <-
+--                reserveRegisterFor constantReg $
+--                withTempRegister (constantReg:possibly shiftLoc) $ \valueReg -> do
+--                    if shiftLoc == valueReg
+--                        then do
+--                            compileGadget $ G.LoadReg shiftLoc constantReg
+--                            compileGadget $ shiftGadget
+--                        else
+--                            withTempRegister' $ \savedShift -> do
+--                                compileGadget $ G.LoadReg savedShift shiftLoc
+--                                compileGadget $ G.LoadReg shiftLoc constantReg
+--                                compileGadget $ shiftGadget
+--                                compileGadget $ G.LoadReg valueReg shiftLoc
+--                                compileGadget $ G.LoadReg shiftLoc savedShift
+--                    return valueReg
+--
+--            reserveRegisterFor valueReg $
+--                method valueReg
+
+            where
+                possibly :: X.Register -> Partial [X.Register]
+                possibly reg = do
+                    CodeGenState{..} <- get
+                    if (X.RegisterLocation reg) `elem` locationPool
+                                then return [reg]
+                                else return []
+
+                numBits             = ceiling $ logBase 2 (fromIntegral value+1)
+                shiftSize           = 31 - numBits
+
+                getConstant :: S.Set X.Location -> G.Gadget -> Maybe (G.Gadget, X.Register)
+                getConstant poolSet g@(G.LoadConst reg val)
+                    -- | not $ (X.RegisterLocation reg) `S.member` poolSet = Nothing
+                    | shiftR val shiftSize == fromIntegral value        = Just (g, reg)
+                    | otherwise                                         = Nothing
+                getConstant _ _                                         = Nothing
+
+                getShift :: S.Set X.Location -> G.Gadget -> Maybe (G.Gadget, X.Register)
+                getShift poolSet g@(G.RightShift reg val)
+                    -- | not $ (X.RegisterLocation reg) `S.member` poolSet = Nothing
+                    | shiftSize == fromIntegral val                     = Just (g, reg)
+                    | otherwise                                         = Nothing
+                getShift _ _                                            = Nothing
+                --
+
+--------------------------------------------------------------------------------
+-- Utilities
+--------------------------------------------------------------------------------
+
+-- | Creates a randomized list of 'ByteString's for a specific gadget that
+-- conform to a certain predicate. 
+translateGadgetThat :: (B.ByteString -> Bool) -> CodeGenState -> G.Gadget -> RVarT [] B.ByteString
+translateGadgetThat predicate state@CodeGenState{..} gadget = do
+    !gadgetSet                  <- lift $ maybeToList $ D.libraryLookup gadget library
+    shuffled                    <- shuffleT $! S.toList gadgetSet
+    (bytes,_)                   <- lift $ filter isAllowed $ shuffled
+    return bytes
     where
-    -- Tries every possible way of accessing a given memory address
-        possibleTranslations tempReg addr@(X.OffsetAddress baseReg offset) = 
-            withTempRegister [tempReg] $ \tempDstReg ->
-            withTempRegister [baseReg] $ \tempBaseReg -> do
-                    translateGadget $ G.LoadReg tempBaseReg baseReg
-                    translateGadget $ G.LoadMemReg tempDstReg (X.OffsetAddress tempBaseReg offset)
-                    translateGadget $ G.LoadReg tempReg tempDstReg
-        possibleTranslations tempReg addr@(X.IndexedAddress baseReg indexReg scale offset) = 
-            withTempRegister [tempReg] $ \tempDstReg ->
-            withTempRegister [baseReg] $ \tempBaseReg -> 
-            withTempRegister [indexReg] $ \tempIndexReg -> do
-                    translateGadget $ G.LoadReg tempBaseReg baseReg
-                    translateGadget $ G.LoadReg tempIndexReg indexReg
-                    translateGadget $ G.LoadMemReg tempDstReg (X.IndexedAddress tempBaseReg tempIndexReg scale offset)
-                    translateGadget $ G.LoadReg tempReg tempDstReg
+        isAllowed (bs,clobber) = doesNotClobber locationPool gadget (bs,clobber) && predicate bs
 
-withRegister (Constant value)   method = 
-    withTempRegister' $ \valueReg -> do
-        withTempRegister' $ \savedConstant ->
-            withTempRegister' $ \savedShift -> do
-                CodeGenState{..}                <- get
-                let poolSet                     = S.fromList locationPool
-                let gmap                        = D.gadgetMap library
-                (constantGadget, constantLoc)   <- lift $ mapMaybe (getConstant poolSet) $ M.keys gmap
-                (shiftGadget, shiftLoc)         <- lift $ mapMaybe (getShift poolSet) $ M.keys gmap
-                withTempRegister [shiftLoc] $ \tempShiftReg -> do
-                    -- Save the constant and shift registers in case they are special
-                    translateGadget $ G.LoadReg savedConstant constantLoc
-                    translateGadget $ G.LoadReg savedShift shiftLoc
-                    -- Actually perform the constant load and the shift
-                    translateGadget $ constantGadget
-                    translateGadget $ G.LoadReg tempShiftReg constantLoc
-                    translateGadget $ shiftGadget
-                    -- Move the constant into a temporary register
-                    translateGadget $ G.LoadReg valueReg shiftLoc
-                    -- Restore the constant and shift registers
-                    translateGadget $ G.LoadReg constantLoc savedConstant
-                    translateGadget $ G.LoadReg shiftLoc savedShift
-        -- Release the other temp registers and perform the desired method on
-        -- the valueReg which now holds the desired constant!
-        method valueReg
-
-    where
-        numBits             = ceiling $ logBase 2 (fromIntegral value+1)
-        shiftSize           = 31 - numBits
-
-        getConstant :: S.Set X.Location -> G.Gadget -> Maybe (G.Gadget, X.Register)
-        getConstant poolSet g@(G.LoadConst reg val)
-            -- | not $ (X.RegisterLocation reg) `S.member` poolSet = Nothing
-            | shiftR val shiftSize == fromIntegral value        = Just (g, reg)
-            | otherwise                                         = Nothing
-        getConstant _ _                                         = Nothing
-
-        getShift :: S.Set X.Location -> G.Gadget -> Maybe (G.Gadget, X.Register)
-        getShift poolSet g@(G.RightShift reg val)
-            -- | not $ (X.RegisterLocation reg) `S.member` poolSet = Nothing
-            | shiftSize == fromIntegral val                     = Just (g, reg)
-            | otherwise                                         = Nothing
-        getShift _ _                                            = Nothing
-        --
+-- | Same as 'translateGadgetThat' with the predicate parameter pre-applied as
+-- always being true.
+translateGadget :: CodeGenState -> G.Gadget -> RVarT [] B.ByteString
+translateGadget = translateGadgetThat (return True)
 
 -- | Compiles a gadget to bytecode and places it in the sequence of generated
 -- code.
-translateGadget :: G.Gadget -> Partial ()
-translateGadget gadget = do
+compileGadget :: G.Gadget -> Partial ()
+compileGadget gadget = do
     state@(CodeGenState{..})    <- get
-    !gadgetSet                   <- lift $ maybeToList $ D.libraryLookup gadget library
-    let (shuffled,gen)          = sampleState (shuffle $! S.toList gadgetSet) randomGenerator
-    (bytes,_)                   <- lift $ filter (doesNotClobber locationPool gadget) $ shuffled
+    (bytes,gen)                 <- lift $ sampleStateT (translateGadget state gadget) randomGenerator
     let newCode                 = generatedCode ++ [Right bytes]
-    -- put the generator in the state so that the jump replacement code
-    -- and future gadgets can be random as well
     put $! state {
             randomGenerator = gen
         ,   generatedCode   = newCode
         }
-    return ()
 
 -- | Ensures that a gadget only clobbers the unallocated locations described in
 -- the locationPool.
@@ -386,235 +470,143 @@ doesNotClobber locationPool _            (_,clobber)    = doesNotClobber' ((X.Re
 doesNotClobber' locationPool clobber =
     let
         clobberSet              = S.fromList clobber
-        clobberAbleLocations    = S.fromList $ (X.RegisterLocation X.EFLAG):locationPool
+        clobberAbleLocations    = S.fromList $ locationPool
     in
         clobberSet `S.union` clobberAbleLocations == clobberAbleLocations
+
+-- | Returns the current byte offset
+currentByteOffset :: Partial Integer
+currentByteOffset = do
+    CodeGenState{..}    <- get
+    return $ sum $ map toSize generatedCode
+    where
+        toSize (Right bytes)            = fromIntegral $ B.length bytes
+        toSize (Left (JumpHolder{..}))  = jumpLength
 
 --------------------------------------------------------------------------------
 -- Statements
 --------------------------------------------------------------------------------
 
 noop :: Statement
-noop = translateGadget G.NoOp
+noop = compileGadget G.NoOp
 
 move :: (Paramable a, Paramable b) => a -> b -> Statement
-move dst src = withParam dst moveToDst
-    where
-        moveToDst (Register dstReg) = 
-            withParamAsRegister src $ \srcReg ->
-            translateGadget $ G.LoadReg dstReg srcReg
-        moveToDst (Memory dstAddr)  = 
-            withParamAsRegister src $ \srcReg ->
-            translateGadget $ G.StoreMemReg dstAddr srcReg
-        moveToDst _                 = fail "Attempting to move to a non-location."
+move dst src =
+    asRegister src $ \srcReg ->
+    saveAsRegister dst $ \dstReg ->
+        compileGadget $ G.LoadReg dstReg srcReg
+
+--move dst src = withParam dst moveToDst
+--    where
+--        moveToDst (Register dstReg) = 
+--            asRegister src $ \srcReg ->
+--            compileGadget $ G.LoadReg dstReg srcReg
+--        moveToDst (Memory dstAddr)  = 
+--            asRegister src $ \srcReg ->
+--            compileGadget $ G.StoreMemReg dstAddr srcReg
+--        moveToDst _                 = fail "Attempting to move to a non-location."
 
 add :: (Paramable a, Paramable b, Paramable c) => a -> b -> c -> Statement
 add dst val1 val2 = 
-    saveParamAsRegister dst $ \dstReg ->
-    withParamAsRegister val1 $ \val1Reg ->
-    withParamAsRegister val2 $ \val2Reg -> do
-        translateGadget $ G.LoadReg dstReg val1Reg
-        translateGadget $ G.Plus dstReg $ S.fromList [dstReg, val2Reg]
+    asRegister val1 $ \val1Reg ->
+    asRegister val2 $ \val2Reg ->
+    saveAsRegister dst $ \dstReg -> do
+        compileGadget $ G.LoadReg dstReg val1Reg
+        compileGadget $ G.Plus dstReg $ S.fromList [dstReg, val2Reg]
 
 mul :: (Paramable a, Paramable b, Paramable c) => a -> b -> c -> Statement
 mul dst val1 val2 = 
-    saveParamAsRegister dst $ \dstReg ->
-    withParamAsRegister val1 $ \val1Reg ->
-    withParamAsRegister val2 $ \val2Reg -> do
-        translateGadget $ G.LoadReg dstReg val1Reg
-        translateGadget $ G.Times dstReg $ S.fromList [dstReg, val2Reg]
+    asRegister val1 $ \val1Reg ->
+    asRegister val2 $ \val2Reg ->
+    saveAsRegister dst $ \dstReg -> do
+        compileGadget $ G.LoadReg dstReg val1Reg
+        compileGadget $ G.Times dstReg $ S.fromList [dstReg, val2Reg]
 
 xor :: (Paramable a, Paramable b, Paramable c) => a -> b -> c -> Statement
 xor dst val1 val2 = 
-    saveParamAsRegister dst $ \dstReg ->
-    withParamAsRegister val1 $ \val1Reg ->
-    withParamAsRegister val2 $ \val2Reg -> do
-        translateGadget $ G.LoadReg dstReg val1Reg
-        translateGadget $ G.Xor dstReg $ S.fromList [dstReg, val2Reg]
+    saveAsRegister dst $ \dstReg ->
+    asRegister val1 $ \val1Reg ->
+    asRegister val2 $ \val2Reg -> do
+        compileGadget $ G.LoadReg dstReg val1Reg
+        compileGadget $ G.Xor dstReg $ S.fromList [dstReg, val2Reg]
 
 sub :: (Paramable a, Paramable b, Paramable c) => a -> b -> c -> Statement
 sub dst val1 val2 = 
-    saveParamAsRegister dst $ \dstReg ->
-    withParamAsRegister val1 $ \val1Reg ->
-    withParamAsRegister val2 $ \val2Reg -> do
-        translateGadget $ G.LoadReg dstReg val1Reg
-        translateGadget $ G.Minus dstReg dstReg val2Reg
+    saveAsRegister dst $ \dstReg ->
+    asRegister val1 $ \val1Reg ->
+    asRegister val2 $ \val2Reg -> do
+        compileGadget $ G.LoadReg dstReg val1Reg
+        compileGadget $ G.Minus dstReg dstReg val2Reg
+
+jump :: Label -> Partial JumpReason -> Statement
+jump offsetLabel partialReason = do
+    reason <- partialReason
+    case reason of
+        Always                  ->
+            buildJump (G.Jump X.Always) offsetLabel
+        Because relation a b    -> 
+            asRegister a $ \aReg ->
+            asRegister b $ \bReg -> do
+                compileGadget $ G.Compare aReg bReg
+                buildJump (G.Jump relation) offsetLabel
+
+buildJump jumpFlavor offset = do
+    state@CodeGenState{..}  <- get
+    currentOffset           <- currentByteOffset
+    -- This is probably not ideal as it will cause generate cases for jumps that
+    -- do not exist, but it is _MUCH_ cleaner than acquiring a list of all valid
+    -- jump sizes.
+    jumpLength              <- lift $ 0:[2..16]
+    let jumpHolder          = JumpHolder {
+        jumpFlavor      = jumpFlavor
+    ,   jumpPosition    = currentOffset
+    ,   jumpLength      = jumpLength
+    ,   jumpTarget      = offset
+    ,   jumpClobberable = locationPool
+    }
+    put $ state {
+        generatedCode = generatedCode ++ [Left jumpHolder]
+    }
+
 
 ---- | "Returns" from the method. This is done by jumping to the end of a method
 ---- and moving the given variable to EAX.
---ret :: Variable -> Predicate ()
---ret a = do
---    CodeGenState{..}    <- get
---    aLoc                <- varToLoc' a
---    let moveAToEAX = moveHelper locationPool (X.RegisterLocation X.EAX) aLoc
---    calculateJump moveAToEAX (G.Jump X.Always) endOfCodeLabel
---
---jump :: Label -> Predicate JumpReason -> Predicate ()
---jump indexLabel reason = do
---    reason' <- reason
---    case reason' of
---        Always                  -> calculateJump (inits $ repeat G.NoOp) (G.Jump X.Always) indexLabel
---        (Because reason a b)    -> do
---            CodeGenState{..} <- get
---            -- A list of list of gadgets that will compare the required
---            -- locations
---            let compare' = [ 
---                        moveA ++  moveB ++  [G.Compare aReg bReg]
---                        --noops ++ moveA ++  moveB ++  [G.Compare aReg bReg]
---                    | 
---                        -- Include noops so to vary the length of the jump
---                        -- instruction
---                        --noops                           <- (inits $ repeat G.NoOp)
---                        aLoc@(X.RegisterLocation aReg)  <- a:locationPool
---                    ,   bLoc@(X.RegisterLocation bReg)  <- (b:locationPool) \\ [aLoc]
---                    ,   moveA <- moveHelper locationPool aLoc a -- Move b into x
---                    ,   moveB <- moveHelper locationPool bLoc b -- Move c into y
---                    ]
---            calculateJump compare' (G.Jump reason) indexLabel
---
---always :: Predicate JumpReason
---always = return Always
---
---(->-) :: Variable -> Variable -> Predicate JumpReason
---a ->- b = do
---    a' <- varToLoc' a
---    b' <- varToLoc' b
---    return $ Because X.Greater a' b'
---
---(->=-) :: Variable -> Variable -> Predicate JumpReason
---a ->=- b = do
---    a' <- varToLoc' a
---    b' <- varToLoc' b
---    return $ Because X.GreaterEqual a' b'
---
---(-<-) :: Variable -> Variable -> Predicate JumpReason
---a -<- b = do
---    a' <- varToLoc' a
---    b' <- varToLoc' b
---    return $ Because X.Less a' b'
---
---(-<=-) :: Variable -> Variable -> Predicate JumpReason
---a -<=- b = do
---    a' <- varToLoc' a
---    b' <- varToLoc' b
---    return $ Because X.LessEqual a' b'
---
---(-==-) :: Variable -> Variable -> Predicate JumpReason
---a -==- b = do
---    a' <- varToLoc' a
---    b' <- varToLoc' b
---    return $ Because X.Equal a' b'
---
---(-!=-) :: Variable -> Variable -> Predicate JumpReason
---a -!=- b = do
---    a' <- varToLoc' a
---    b' <- varToLoc' b
---    return $ Because X.NotEqual a' b'
---
-----------------------------------------------------------------------------------
----- Predicate Helper Functions
-----------------------------------------------------------------------------------
---
----- | Common jump calculation code. It takes a jump constructor a predicate
----- offset and returns a predicate that fulfills the jump. Backward jumps are
----- generated by the 'makePredicate' function immediately, while forward jumps are
----- translated to 'JumpHolder's of each possible size which later become fulfilled
----- by subsequent calls to 'makePredicate'.
---calculateJump :: [[G.Gadget]] -> (Integer -> G.Gadget) -> Label -> Predicate ()
---calculateJump allGadgetStreams jumpFlavor target = do
---        state@CodeGenState{..}  <- get
---        gadgetStream            <- lift allGadgetStreams -- grab a sequence of gadgets that do what we want
---        byteStream              <- liftM B.concat $ mapM translateGadget gadgetStream -- translate all of the gadgets to instructions
---        let jumpGadgets         = filter isJump $ M.keys $ D.gadgetMap library :: [G.Gadget]
---        -- | This is pretty ugly and there is probably a better way to do
---        -- this, but this will find all of the possible lengths that a jump
---        -- instruction can be.
---        currentOffset           <- lift $ maybeToList $ M.lookup (currentPredicate) predicateToByte
---        let prefixLength        = fromIntegral $ B.length byteStream
---        jumpLength              <- lift  
---                                    . S.toList 
---                                    . S.fromList
---                                    . map (fromIntegral . B.length . fst) 
---                                    . concatMap S.elems
---                                    =<< (   lift
---                                        $   maybeToList
---                                        $   mapM (flip D.libraryLookup library) jumpGadgets
---                                        )
---        let jumpHolder          = JumpHolder {
---                jumpFlavor      = jumpFlavor
---            ,   jumpByteOffset  = currentOffset
---            ,   jumpIndex       = currentPredicate
---            ,   jumpLength      = jumpLength
---            ,   jumpTarget      = target
---            ,   jumpPrefix      = byteStream
---            }
---        put $! state{
---                generatedCode       = generatedCode ++ [Left jumpHolder]
---            ,   predicateToByte     = M.insert (currentPredicate+1) (currentOffset+jumpLength+prefixLength) predicateToByte
---            ,   currentPredicate    = currentPredicate + 1 
---            ,   locationPool        = locationPool -- We called translateGadget which modifies the pool, so we must restore it.
---            }
---    where
---        isJump :: G.Gadget -> Bool
---        isJump (G.Jump _ _) = True
---        isJump _            = False
---
----- | A helper function that will generate a sequence of gadgets that will move
----- one location to another regardless of the type of location.
---moveHelper  :: LocationPool -- ^ Locations that we are allowed to use as scratch
---            -> X.Location   -- ^ The destination location
---            -> X.Location   -- ^ The source location
---            -> [[G.Gadget]]   -- ^ All the possible sequences of gadgets that will fulfill the move
---moveHelper pool (X.RegisterLocation a) (X.RegisterLocation b)       
---    | a == b    = [[]]
---    | otherwise = [[G.LoadReg a b]]
---
---moveHelper pool (X.MemoryLocation a offset) bLoc@(X.RegisterLocation b)  =
---        [G.StoreMemReg a offset b]
---    :   [
---            [
---                G.LoadReg taReg a
---            ,   G.LoadReg tbReg b
---            ,   G.StoreMemReg taReg offset tbReg
---            ]
---        |
---                taLoc@(X.RegisterLocation taReg) <- (X.RegisterLocation a):pool
---            ,   tbLoc@(X.RegisterLocation tbReg) <- ((bLoc:pool) \\ [taLoc])
---        ]
---
---moveHelper pool aLoc@(X.RegisterLocation a) (X.MemoryLocation b offset)  =
---        [G.LoadMemReg a b offset]
---    :   [
---            [
---                G.LoadReg tb b
---            ,   G.LoadMemReg ta tb offset
---            ,   G.LoadReg a ta
---            ]
---        |
---                (X.RegisterLocation ta) <- aLoc:pool
---            ,   (X.RegisterLocation tb) <- pool
---        ]
---
---moveHelper pool a@(X.MemoryLocation aReg aOffset) b@(X.MemoryLocation bReg bOffset) 
---    | a == b    = [[]]
---    | otherwise = 
---        [
---            [
---                G.LoadReg taReg aReg
---            ,   G.LoadMemReg tReg taReg aOffset
---            ,   G.LoadReg tbReg bReg
---            ,   G.StoreMemReg tbReg bOffset tReg
---            ] 
---        | 
---                taLoc@(X.RegisterLocation taReg) <- (X.RegisterLocation aReg):pool
---            ,   tbLoc@(X.RegisterLocation tbReg) <- (X.RegisterLocation bReg):pool
---            ,   tLoc@(X.RegisterLocation tReg)   <- (pool \\ [tbLoc])
---        ]
---
-----moveHelper _ a b
-----    | a == b    = [[]]
-----    | otherwise = []
---
+ret :: (Paramable p) => p -> Statement
+ret value = do
+    CodeGenState{..} <- get
+    asRegister value $ \valueReg ->
+        compileGadget $ G.LoadReg X.EAX valueReg
+    reserveRegisterFor X.EAX $
+        jump endOfCodeLabel always
+
+
+always :: Partial JumpReason
+always = return Always
+
+buildJumpReason :: (Paramable a, Paramable b) => X.Reason -> a -> b -> Partial JumpReason
+buildJumpReason relation a b = do
+    withParam a $ \aParam ->
+        withParam b $ \bParam ->
+        return $ Because relation aParam bParam
+
+(->-) :: (Paramable a, Paramable b) => a -> b -> Partial JumpReason
+(->-) = buildJumpReason X.Greater
+
+(->=-) :: (Paramable a, Paramable b) => a -> b -> Partial JumpReason
+(->=-) = buildJumpReason X.GreaterEqual
+
+(-<-) :: (Paramable a, Paramable b) => a -> b -> Partial JumpReason
+(-<-) = buildJumpReason X.Less
+
+(-<=-) :: (Paramable a, Paramable b) => a -> b -> Partial JumpReason
+(-<=-) = buildJumpReason X.LessEqual
+
+(-==-) :: (Paramable a, Paramable b) => a -> b -> Partial JumpReason
+(-==-) = buildJumpReason X.Equal
+
+(-!=-) :: (Paramable a, Paramable b) => a -> b -> Partial JumpReason
+(-!=-) = buildJumpReason X.NotEqual
+
 ----------------------------------------------------------------------------------
 ---- External API
 ----------------------------------------------------------------------------------
@@ -681,7 +673,7 @@ makeLocal = do
     --variableLocation            <- lift $ locationPool++[stackVariable]
     put $! state {
             variableMap         = M.insert variableId (Memory stackAddress) variableMap
-        ,   locationPool        = locationPool \\ [X.MemoryLocation stackAddress]
+--        ,   locationPool        = locationPool \\ [X.MemoryLocation stackAddress]
         ,   localVariableOffset = stackOffset
         }
     return variableId
@@ -720,136 +712,127 @@ makeInput = do
 makeInputs :: Int -> Partial [Variable]
 makeInputs n = sequence $ replicate n makeInput
 
----- | Creates a 'label' which is just an integer which maps to a position in the
----- predicate stream.
---makeLabel ::Partial Label
---makeLabel = do
---    state@CodeGenState{..}  <- get
---    let indexLabel          = Label $ 1 + (maximum $ 0 : (map unLabel $ M.keys labelMap))
---    put $ state {
---        labelMap        = M.insert indexLabel currentPredicate labelMap 
---    }
---    return indexLabel
---    
---makeLabels :: (Integral i) => i -> Partial [Label]
---makeLabels n = sequence $ replicate (fromIntegral n) makeLabel
+-- | Create's a 'Label' which can be passed to jump instructions to specify
+-- locations in the byte stream to jump to.
+makeLabel ::Partial Label
+makeLabel = do
+    state@CodeGenState{..}  <- get
+    let indexLabel          = Label $ 1 + (maximum $ 0 : (map unLabel $ M.keys labelMap))
+    currentOffset           <- currentByteOffset
+    put $ state {
+        labelMap        = M.insert indexLabel currentOffset labelMap 
+    }
+    return indexLabel
+    
+-- | Create's a list of n 'Label's.
+makeLabels :: (Integral i) => i -> Partial [Label]
+makeLabels n = sequence $ replicate (fromIntegral n) makeLabel
 
----- | Mark the current position as the given label.
---label :: Label -> Predicate ()
---label l = do
---    state@CodeGenState{..}    <- get
---    put $ state {
---        labelMap        = M.insert l currentPredicate labelMap 
---    }
---    return ()
---
+-- | Mark the current position as the given label.
+label :: Label -> Statement
+label l = do
+    state@CodeGenState{..}    <- get
+    currentOffset           <- currentByteOffset
+    put $ state {
+        labelMap        = M.insert l currentOffset labelMap 
+    }
 
 generate :: D.GadgetLibrary -> StdGen -> Program -> Maybe GeneratedCode
 generate library gen program = listToMaybe $ do
     let program'    = do
-        --eoc <- makeLabel
+        eoc <- makeLabel
         program
-        --label eoc
+        label eoc
     (_,solution)    <- runStateT program' $ initialState library gen
     --let eitherCode  = replaceAllJumpHolders solution -- Turn solution into [Either Meta Jump]
-    let eitherCode  = generatedCode solution -- Turn solution into [Either Meta Jump]
-    let byteCode    = B.concat $ rights eitherCode -- Turn the Either values into Meta lists and concats
-    -- Remove solutions with hanging jumps
-    guard $ (null . lefts) eitherCode
+    --let eitherCode  = generatedCode solution -- Turn solution into [Either Meta Jump]
+    --let byteCode    = B.concat $ rights eitherCode -- Turn the Either values into Meta lists and concats
+    byteCode        <- replaceAllJumpHolders solution
     return GeneratedCode {
             byteCode            = byteCode
         ,   localVariableSize   = 0 - localVariableOffset solution
     }
+    where
+        replaceAllJumpHolders :: CodeGenState -> [B.ByteString]
+        replaceAllJumpHolders state@CodeGenState{..} = do
+            let randomCode  =   mapM (replaceJumpHolder state) generatedCode 
+            (chosenCode,_ ) <-  sampleStateT randomCode randomGenerator
+            return $ B.concat chosenCode
 
-----------------------------------------------------------------------------------
----- Predicate to Gadget translation
-----------------------------------------------------------------------------------
+        replaceJumpHolder :: CodeGenState -> Either JumpHolder B.ByteString -> RVarT [] B.ByteString
+        replaceJumpHolder state (Right bytes)             = return bytes
+        replaceJumpHolder state (Left (JumpHolder{..}))    = do
+            let oldState = state { locationPool = jumpClobberable }
+            targetOffset <- lift $ maybeToList $ jumpTarget `M.lookup` labelMap oldState
+            translateGadgetThat isRightSize oldState (jumpFlavor (targetOffset - jumpPosition - jumpLength))
+            where
+                isRightSize = (==jumpLength) . fromIntegral . B.length
+
+
+--        replaceAllJumpHolders :: CodeGenState -> [Either JumpHolder B.ByteString]
+--        -- | Attempts to replace 'JumpHolder's in the byte stream with a given element in
+--        -- generatedCode. Because a JumpHolder may be replaced by several
+--        -- instructions it is necessary to return a list of lists and then
+--        -- concat the results.
+--        replaceAllJumpHolders :: CodeGenState -> [Either JumpHolder B.ByteString]
+--        replaceAllJumpHolders state@CodeGenState{..} = 
+--            let
+--                jumpReplacers   = map ((uncurry $ replaceJumpHolders state)) $ M.assocs predicateToByte
+--                replacedCode    = foldrM mapM generatedCode jumpReplacers
+--            in
+--                fst $ sampleState (replacedCode :: RVar [Either JumpHolder B.ByteString]) randomGenerator
 --
---makePredicate1 :: (X.Location -> [[G.Gadget]]) -> Variable -> Predicate ()
---makePredicate1 generator a = do
---    state <- get
---    makePredicate (generator $ varToLoc state a)
+--        replaceJumpHolders :: CodeGenState -> Integer -> Integer -> Either JumpHolder B.ByteString -> RVar (Either JumpHolder B.ByteString)
+--        replaceJumpHolders state@CodeGenState{..} predIndex byteOffset j@(Left (JumpHolder {..}))
+--            | predIndex == labelToIndex state jumpTarget   = do
+----                let jumpGarbageSize         = if (predIndex-jumpIndex) <= 0
+----                                                then jumpLength + (fromIntegral $ B.length jumpPrefix)
+----                                                else jumpLength
+--                let jumpGarbageSize         = jumpLength + (fromIntegral $ B.length jumpPrefix)
+--                let jumpGadget              = (jumpFlavor (byteOffset - jumpByteOffset - jumpGarbageSize))
+--                let gadgets                 = filter ((jumpLength==) . fromIntegral . B.length . fst)
+--                                                $ concatMap S.toList
+--                                                $ maybeToList
+--                                                $ D.libraryLookup jumpGadget library
+--                shuffled                    <- shuffle gadgets
+--                case listToMaybe $ filter (doesNotClobber locationPool jumpGadget) $ shuffled of --shuffled
+--                    Nothing         -> return j
+--                    Just (meta,_)   -> return $ Right $ jumpPrefix `B.append` meta
+--            | otherwise             = return j
+--        replaceJumpHolders _ _ _ meta = return meta
 --
---makePredicate2 :: (X.Location -> X.Location -> [[G.Gadget]]) -> Variable -> Variable -> Predicate ()
---makePredicate2 generator a b = do
---    state <- get
---    makePredicate ((generator `on` varToLoc state) a b)
 --
---makePredicate3 :: (X.Location -> X.Location -> X.Location -> [[G.Gadget]]) -> Variable -> Variable -> Variable -> Predicate ()
---makePredicate3 generator a b c = do
---    state <- get
---    makePredicate ((generator `on` varToLoc state) a b $ varToLoc state c)
 --
----- | A helper function that takes a list of lists of gadgets that fulfill a
----- given computation. It attempts to generate an instruction sequence for each
----- gadget in each possible sequence of gadgets. It also fills in any Jump
----- placeholders that it is able to.
---makePredicate :: [[G.Gadget]] -> Predicate ()
---makePredicate allGadgetStreams = do
---    state@(CodeGenState{..})    <- get
---    gadgetStream                <- lift allGadgetStreams -- grab a sequence of gadgets that do what we want
---    --noops                       <- lift (inits $ repeat G.NoOp)
---    --metaStream                  <- mapM translateGadget (gadgetStream++noops) -- translate all of the gadgets to instructions
---    metaStream                  <- mapM translateGadget (gadgetStream) -- translate all of the gadgets to instructions
---    byteIndex                   <- lift $ maybeToList $ M.lookup currentPredicate predicateToByte
---    let nextByteIndex           = byteIndex + (foldr' (+) 0 $ map (fromIntegral . B.length) metaStream)
---    let newCode                 = generatedCode ++ [(Right $ B.concat metaStream)]
---    put $! state{
---            generatedCode       = newCode
---        ,   predicateToByte     = M.insert (currentPredicate+1) nextByteIndex predicateToByte
---        ,   currentPredicate    = currentPredicate + 1 
---        ,   locationPool        = locationPool -- Restore the pool that may have been altered by gadgets
---        }
 --
----- | Turns a gadget into a sequence of assembly instructions. It also
----- removes from the location pool any location that is defined by the
----- gadget. This prevents a sequence of gadgets from clobbering
----- intermediate values.
---translateGadget :: G.Gadget -> Predicate B.ByteString
---translateGadget gadget = do
---    state@(CodeGenState{..})    <- get
---    gadgetSet                   <- lift $ maybeToList $ D.libraryLookup gadget library
---    let (shuffled,gen)          = sampleState (shuffle $! S.toList gadgetSet) randomGenerator
---    let newLocationPool         = locationPool \\ (G.defines gadget)
---    (bytes,clobbering)          <- lift $ filter (doesNotClobber newLocationPool gadget) $ shuffled
---    -- put the generator in the state so that the jump replacement code
---    -- and future gadgets can be random as well
---    put $! state {
---            randomGenerator = gen
---            -- Remove any intermediate values from the location pool
---        ,   locationPool    = newLocationPool
---        }
---    return $! bytes
 --
---   
----- | Ensures that a gadget realization does not clobber locations that
----- should not be clobbered.
---doesNotClobber locationPool _            (_,[])         = True
---doesNotClobber locationPool (G.Jump _ _) (_,clobber)    = doesNotClobber' (locationPool) clobber
---doesNotClobber locationPool _            (_,clobber)    = doesNotClobber' ((X.RegisterLocation X.EFLAG):locationPool) clobber
+--    where
+--        -- | Attempts to replace forward jump statements for a given element in
+--        -- generatedCode. Because a jumpHolder may be replaced by several
+--        -- instructions it is necessary to return a list of lists and then
+--        -- concat the results.
+--        replaceAllJumpHolders :: CodeGenState -> [Either JumpHolder B.ByteString]
+--        replaceAllJumpHolders state@CodeGenState{..} = 
+--            let
+--                jumpReplacers   = map ((uncurry $ replaceJumpHolders state)) $ M.assocs predicateToByte
+--                replacedCode    = foldrM mapM generatedCode jumpReplacers
+--            in
+--                fst $ sampleState (replacedCode :: RVar [Either JumpHolder B.ByteString]) randomGenerator
 --
---doesNotClobber' locationPool clobber =
---    let
---        clobberSet              = S.fromList clobber
---        clobberAbleLocations    = S.fromList $ (X.RegisterLocation X.EFLAG):locationPool
---    in
---        clobberSet `S.union` clobberAbleLocations == clobberAbleLocations
---
----- | Translates a variable into an expression location.
---varToLoc :: CodeGenState -> Variable -> X.Location
---varToLoc (CodeGenState {..}) var = fromJust $ M.lookup var variableMap
---
---varToLoc' :: Variable -> Predicate X.Location
---varToLoc' var = do
---    (CodeGenState {..})  <- get
---    return $ fromJust $ M.lookup var variableMap
---
---labelToIndex :: CodeGenState -> Label -> Integer
---labelToIndex state label = fromJust $ M.lookup label $ labelMap state
---
-----locToVar :: CodeGenState -> X.Location -> Maybe Variable
-----locToVar (_,vars,_) targetLoc = M.foldWithKey findLoc Nothing vars 
-----    where
-----        findLoc var loc res = if loc == targetLoc   then Just var
-----                                                    else res
---
+--        replaceJumpHolders :: CodeGenState -> Integer -> Integer -> Either JumpHolder B.ByteString -> RVar (Either JumpHolder B.ByteString)
+--        replaceJumpHolders state@CodeGenState{..} predIndex byteOffset j@(Left (JumpHolder {..}))
+--            | predIndex == labelToIndex state jumpTarget   = do
+----                let jumpGarbageSize         = if (predIndex-jumpIndex) <= 0
+----                                                then jumpLength + (fromIntegral $ B.length jumpPrefix)
+----                                                else jumpLength
+--                let jumpGarbageSize         = jumpLength + (fromIntegral $ B.length jumpPrefix)
+--                let jumpGadget              = (jumpFlavor (byteOffset - jumpByteOffset - jumpGarbageSize))
+--                let gadgets                 = filter ((jumpLength==) . fromIntegral . B.length . fst)
+--                                                $ concatMap S.toList
+--                                                $ maybeToList
+--                                                $ D.libraryLookup jumpGadget library
+--                shuffled                    <- shuffle gadgets
+--                case listToMaybe $ filter (doesNotClobber locationPool jumpGadget) $ shuffled of --shuffled
+--                    Nothing         -> return j
+--                    Just (meta,_)   -> return $ Right $ jumpPrefix `B.append` meta
+--            | otherwise             = return j
+--        replaceJumpHolders _ _ _ meta = return meta

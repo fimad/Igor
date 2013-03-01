@@ -1,5 +1,6 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE FlexibleInstances #-}
 module Igor.CodeGen
 ( 
 -- * Types
@@ -185,6 +186,19 @@ instance Paramable X.Location where
 
 instance Paramable Param where
     withParam = flip ($)
+
+-- | An offset memory dereference.
+instance (Paramable a, Integral b) => Paramable (a,b) where
+    withParam (baseParam,offset) method =
+        asRegister baseParam $ \baseReg ->
+            method $ Memory $ X.OffsetAddress baseReg (fromIntegral offset)
+
+-- | An indexed memory dereference.
+instance (Paramable a, Paramable b, Integral c, Integral d) => Paramable (a,b,c,d) where
+    withParam (baseParam,indexParam,scale,offset) method =
+        asRegister baseParam $ \baseReg ->
+        asRegister indexParam $ \indexReg ->
+            method $ Memory $ X.IndexedAddress baseReg indexReg (fromIntegral scale) (fromIntegral offset)
 
 -- TODO: Write instances of Paramable for memory locations
 

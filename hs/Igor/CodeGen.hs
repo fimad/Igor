@@ -278,7 +278,17 @@ saveAsRegister paramable method =
                             compileGadget $ G.LoadReg tempBaseReg baseReg
                             compileGadget $ G.StoreMemReg (X.OffsetAddress tempBaseReg offset) tmpReg
                     return result
-                savingMethod _                  reg = fail "Attempting to save to a non-location."
+                savingMethod (Memory (X.IndexedAddress baseReg indexReg scale offset))   reg = do
+                    result <- method reg
+                    withTempRegister [reg] $ \tmpReg -> do
+                        compileGadget $ G.LoadReg tmpReg reg
+                        withTempRegister [baseReg] $ \tempBaseReg -> do
+                            compileGadget $ G.LoadReg tempBaseReg baseReg
+                            withTempRegister [indexReg] $ \tempIndexReg -> do
+                                compileGadget $ G.LoadReg tempIndexReg indexReg
+                                compileGadget $ G.StoreMemReg (X.IndexedAddress tempBaseReg tempIndexReg scale offset) tmpReg
+                    return result
+                savingMethod _                  reg = error "Attempting to save to a non-location."
 
 -- | Moves the value described by a 'Paramable' into a temporary register that
 -- will be freed at the end of the method. Note that this method will fail if

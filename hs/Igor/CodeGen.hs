@@ -188,6 +188,14 @@ instance Paramable Param where
 
 -- TODO: Write instances of Paramable for memory locations
 
+-- | Returns a shuffled version of location pool wrapped in a partial.
+randomLocationPool :: Partial [X.Register]
+randomLocationPool = do
+    state@CodeGenState{..}      <- get
+    let (shuffledPool, gen')    = sampleState (shuffle $ S.toList locationPool) randomGenerator
+    put $ state { randomGenerator = gen' }
+    return shuffledPool
+
 -- | If the given register is in the location pool it is pulled for the duration
 -- of the given partial.
 reserveRegisterFor :: X.Register -> Partial b -> Partial b
@@ -198,11 +206,11 @@ reserveRegisterFor reg method = do
     -- Restore temp to the location pool if it was originally free
     state                   <- get
     put                     $! state { locationPool = locationPool }
-    --if (X.RegisterLocation reg) `elem` locationPool
+    --if reg `S.member` locationPool
     --    then do
     --        state@CodeGenState{..}  <- get
     --        put $ state {
-    --            locationPool = (X.RegisterLocation reg):locationPool
+    --            locationPool = reg `S.insert` locationPool
     --        }
     --    else return ()
     return result
@@ -226,6 +234,7 @@ withTempRegister :: [X.Register] -> (X.Register -> Partial b) -> Partial b
 withTempRegister nonFreeRegs method = do
     state@CodeGenState{..}  <- get
     tempReg                 <- lift $ nonFreeRegs ++ S.toList locationPool
+    --tempReg                 <- lift =<< (++) <$> return nonFreeRegs <*> randomLocationPool
     reserveRegisterFor tempReg $ method tempReg
 
 -- | Same as 'withTempRegister' except that the first argument has been
@@ -257,32 +266,6 @@ saveAsRegister paramable method =
                     return result
                 savingMethod _                  reg = fail "Attempting to save to a non-location."
 
-
--- | Allows you to pull a Paramable value directly into a register and then save
--- it. Basically syntactic sugar for withParam p $ \p' -> withSavedRegister p' $
--- method.
---asSavedRegister :: Paramable p => p -> (X.Register -> Partial b) -> Partial b
---asSavedRegister paramable method =
---    withParam paramable $ flip asSavedRegister' method
---    where
---        asSavedRegister' :: Param -> (X.Register -> Partial b) -> Partial b
---        asSavedRegister' param method = 
---            asRegister param (savingMethod param)
---            where
---                savingMethod (Register dstReg)  reg = do
---                    result <- method reg
---                    compileGadget $ G.LoadReg dstReg reg
---                    return result
---                savingMethod (Memory (X.OffsetAddress baseReg offset))   reg = do
---                    result <- method reg
---                    withTempRegister [reg] $ \tmpReg ->
---                        withTempRegister [baseReg] $ \tempBaseReg -> do
---                            compileGadget $ G.LoadReg tmpReg reg
---                            compileGadget $ G.LoadReg tempBaseReg baseReg
---                            compileGadget $ G.StoreMemReg (X.OffsetAddress tempBaseReg offset) tmpReg
---                    return result
---                savingMethod _                  reg = fail "Attempting to save to a non-location."
---
 -- | Moves the value described by a 'Paramable' into a temporary register that
 -- will be freed at the end of the method. Note that this method will fail if
 -- used on 'Location's this is because it is not possible to determine their
@@ -328,30 +311,6 @@ asRegister paramable method =
                             compileGadget $ G.LoadMemReg tempDstReg (X.IndexedAddress tempBaseReg tempIndexReg scale offset)
                             compileGadget $ G.LoadReg tempReg tempDstReg
 
---        asRegister' (Constant value)   method =  do
---            CodeGenState{..}                <- get
---            let poolSet                     = S.fromList locationPool
---            let gmap                        = D.gadgetMap library
---            (constantGadget, constantLoc)   <- lift $ mapMaybe (getConstant poolSet) $ M.keys gmap
---            (shiftGadget, shiftLoc)         <- lift $ mapMaybe (getShift poolSet) $ M.keys gmap
---
---            --withTempRegister =<< possibly shiftLoc $ \constantReg -> do
---            possiblyConstantLoc <- possibly constantLoc
---            withTempRegister possiblyConstantLoc $ \savedConstant -> do
---                compileGadget $ G.LoadReg savedConstant constantLoc
---                compileGadget $ constantGadget
---                compileGadget $ G.LoadReg shiftLoc constantLoc
---                compileGadget $ G.LoadReg constantLoc savedConstant
---
---            possiblyShiftLoc <- possibly shiftLoc
---            withTempRegister possiblyShiftLoc $ \savedShift -> do
---                compileGadget $ G.LoadReg savedShift shiftLoc
---                compileGadget $ shiftGadget
---
---            withTempRegister possiblyShiftLoc $ \valueReg -> do
---                compileGadget $ G.LoadReg valueReg shiftLoc
---                method valueReg
-
         asRegister' (Constant value)   method = 
             withTempRegister' $ \valueReg -> do
                 withTempRegister' $ \savedConstant ->
@@ -381,38 +340,6 @@ asRegister paramable method =
                 -- Release the other temp registers and perform the desired method on
                 -- the valueReg which now holds the desired constant!
                 method valueReg
-
---            constantReg <-
---                withTempRegister (possibly constantLoc) $ \valueReg -> do
---                    if constantLoc == valueReg
---                        then 
---                            compileGadget $ constantGadget
---                        else
---                            withTempRegister' $ \savedConstant -> do
---                                compileGadget $ G.LoadReg savedConstant constantLoc
---                                compileGadget $ constantGadget
---                                compileGadget $ G.LoadReg valueReg constantLoc
---                                compileGadget $ G.LoadReg constantLoc savedConstant
---                    return valueReg
---
---            valueReg    <-
---                reserveRegisterFor constantReg $
---                withTempRegister (constantReg:possibly shiftLoc) $ \valueReg -> do
---                    if shiftLoc == valueReg
---                        then do
---                            compileGadget $ G.LoadReg shiftLoc constantReg
---                            compileGadget $ shiftGadget
---                        else
---                            withTempRegister' $ \savedShift -> do
---                                compileGadget $ G.LoadReg savedShift shiftLoc
---                                compileGadget $ G.LoadReg shiftLoc constantReg
---                                compileGadget $ shiftGadget
---                                compileGadget $ G.LoadReg valueReg shiftLoc
---                                compileGadget $ G.LoadReg shiftLoc savedShift
---                    return valueReg
---
---            reserveRegisterFor valueReg $
---                method valueReg
 
             where
                 possibly :: X.Register -> Partial [X.Register]
@@ -454,7 +381,6 @@ translateGadgetThat predicate state@CodeGenState{..} gadget = do
     return bytes
     where
         isAllowed (bs,clobber) = predicate bs && doesNotClobber locationPool gadget (bs,clobber)
-        --isAllowed (bs,clobber) = doesNotClobber locationPool gadget (bs,clobber)
 
 -- | Same as 'translateGadgetThat' with the predicate parameter pre-applied as
 -- always being true.

@@ -46,19 +46,17 @@ factorial = do
     [tmp, total]            <- makeLocals 2
     [begin]                 <- makeLabels 1
 
+    move    total   tmp
+
     move    total   (1 :: Integer)
     move    tmp     n
 
     label   begin
---    mul     total   total   tmp
+    mul     total   total   tmp
     sub     tmp     tmp     (1 :: Integer)
-    jump    begin   (tmp ->- (0 :: Integer))
+    jump    begin   ((1 :: Integer) -<- tmp)
 
     ret     total
-    --
-    --load v1 i1
-    --store i1 v2
-    --ret v1
 
 insertSort :: Program
 insertSort = do

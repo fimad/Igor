@@ -24,6 +24,7 @@ module Igor.CodeGen
 , asRegister
 --, asSavedRegister
 , saveAsRegister
+, claimRegister
 , withTempRegister
 , withTempRegister'
 , reserveRegisterFor
@@ -79,7 +80,7 @@ newtype Label           = Label {unLabel :: Integer}
 
 -- | A location pool is the known locations that are free to use as scratch
 -- space or new variables.
-type LocationPool       = [X.Location]
+type LocationPool       = S.Set X.Register
 
 -- | A mapping from Variables to locations.
 type VariableMap        = M.Map Variable Param
@@ -137,7 +138,7 @@ data CodeGenState       = CodeGenState {
         library             :: D.GadgetLibrary
     ,   randomGenerator     :: StdGen
     ,   variableMap         :: VariableMap
-    ,   labelMap            :: M.Map Label Integer 
+    ,   labelMap            :: M.Map Label (Maybe Integer)
     ,   locationPool        :: LocationPool
     ,   generatedCode       :: [Either JumpHolder B.ByteString]
     ,   localVariableOffset :: Integer -- ^ How far from EBP should we assign the next local variable?
@@ -148,7 +149,7 @@ data CodeGenState       = CodeGenState {
 initialState :: D.GadgetLibrary -> StdGen -> CodeGenState
 initialState library gen = CodeGenState {
         library             = library
-    ,   randomGenerator     = gen'
+    ,   randomGenerator     = gen
     ,   variableMap         = M.empty
     ,   labelMap            = M.empty
     ,   locationPool        = shuffledPool
@@ -160,8 +161,9 @@ initialState library gen = CodeGenState {
     ,   endOfCodeLabel      = Label 1 -- ^ The end of code label will always be the first label made.
     }
     where
-        pool                    = map X.RegisterLocation X.generalRegisters
-        (shuffledPool, gen')    = sampleState (shuffle pool) gen
+        --pool                    = map X.RegisterLocation X.generalRegisters
+        --(shuffledPool, gen')    = sampleState (shuffle pool) gen
+        shuffledPool    = S.fromList X.generalRegisters
         
 
 --------------------------------------------------------------------------------
@@ -191,7 +193,7 @@ instance Paramable Param where
 reserveRegisterFor :: X.Register -> Partial b -> Partial b
 reserveRegisterFor reg method = do
     state@CodeGenState{..}  <- get
-    put                     $! state { locationPool = locationPool \\ [X.RegisterLocation reg] }
+    put                     $! state { locationPool = locationPool S.\\ S.singleton reg }
     result                  <- method
     -- Restore temp to the location pool if it was originally free
     state                   <- get
@@ -204,6 +206,15 @@ reserveRegisterFor reg method = do
     --        }
     --    else return ()
     return result
+
+-- | Allocates one of the specified registers from the location pool. Will not
+-- succeed if one of the desired registers is not available.
+claimRegister :: [X.Register] -> (X.Register -> Partial b) -> Partial b
+claimRegister desired method = do
+    state@CodeGenState{..}  <-  get
+    let available           =   S.fromList desired `S.intersection` locationPool
+    chosen                  <-  lift $ S.toList available
+    reserveRegisterFor chosen $ method chosen
     
 
 -- | Allocates and a temporary register for use with a method and then
@@ -214,7 +225,7 @@ reserveRegisterFor reg method = do
 withTempRegister :: [X.Register] -> (X.Register -> Partial b) -> Partial b
 withTempRegister nonFreeRegs method = do
     state@CodeGenState{..}  <- get
-    tempReg                 <- lift $ nonFreeRegs ++ map (\(X.RegisterLocation r) -> r) locationPool
+    tempReg                 <- lift $ nonFreeRegs ++ S.toList locationPool
     reserveRegisterFor tempReg $ method tempReg
 
 -- | Same as 'withTempRegister' except that the first argument has been
@@ -346,7 +357,7 @@ asRegister paramable method =
                 withTempRegister' $ \savedConstant ->
                     withTempRegister' $ \savedShift -> do
                         CodeGenState{..}                <- get
-                        let poolSet                     = S.fromList locationPool
+                        let poolSet                     = locationPool
                         let gmap                        = D.gadgetMap library
                         (constantGadget, constantLoc)   <- lift $ mapMaybe (getConstant poolSet) $ M.keys gmap
                         (shiftGadget, shiftLoc)         <- lift $ mapMaybe (getShift poolSet) $ M.keys gmap
@@ -407,21 +418,21 @@ asRegister paramable method =
                 possibly :: X.Register -> Partial [X.Register]
                 possibly reg = do
                     CodeGenState{..} <- get
-                    if (X.RegisterLocation reg) `elem` locationPool
+                    if reg `S.member` locationPool
                                 then return [reg]
                                 else return []
 
                 numBits             = ceiling $ logBase 2 (fromIntegral value+1)
                 shiftSize           = 31 - numBits
 
-                getConstant :: S.Set X.Location -> G.Gadget -> Maybe (G.Gadget, X.Register)
+                getConstant :: S.Set X.Register -> G.Gadget -> Maybe (G.Gadget, X.Register)
                 getConstant poolSet g@(G.LoadConst reg val)
                     -- | not $ (X.RegisterLocation reg) `S.member` poolSet = Nothing
                     | shiftR val shiftSize == fromIntegral value        = Just (g, reg)
                     | otherwise                                         = Nothing
                 getConstant _ _                                         = Nothing
 
-                getShift :: S.Set X.Location -> G.Gadget -> Maybe (G.Gadget, X.Register)
+                getShift :: S.Set X.Register -> G.Gadget -> Maybe (G.Gadget, X.Register)
                 getShift poolSet g@(G.RightShift reg val)
                     -- | not $ (X.RegisterLocation reg) `S.member` poolSet = Nothing
                     | shiftSize == fromIntegral val                     = Just (g, reg)
@@ -438,11 +449,12 @@ asRegister paramable method =
 translateGadgetThat :: (B.ByteString -> Bool) -> CodeGenState -> G.Gadget -> RVarT [] B.ByteString
 translateGadgetThat predicate state@CodeGenState{..} gadget = do
     !gadgetSet                  <- lift $ maybeToList $ D.libraryLookup gadget library
-    shuffled                    <- shuffleT $! S.toList gadgetSet
-    (bytes,_)                   <- lift $ filter isAllowed $ shuffled
+    shuffled                    <- shuffleT $! S.toList $ S.filter isAllowed gadgetSet
+    (bytes,_)                   <- lift $ shuffled
     return bytes
     where
-        isAllowed (bs,clobber) = doesNotClobber locationPool gadget (bs,clobber) && predicate bs
+        isAllowed (bs,clobber) = predicate bs && doesNotClobber locationPool gadget (bs,clobber)
+        --isAllowed (bs,clobber) = doesNotClobber locationPool gadget (bs,clobber)
 
 -- | Same as 'translateGadgetThat' with the predicate parameter pre-applied as
 -- always being true.
@@ -465,12 +477,12 @@ compileGadget gadget = do
 -- the locationPool.
 doesNotClobber locationPool _            (_,[])         = True
 doesNotClobber locationPool (G.Jump _ _) (_,clobber)    = doesNotClobber' (locationPool) clobber
-doesNotClobber locationPool _            (_,clobber)    = doesNotClobber' ((X.RegisterLocation X.EFLAG):locationPool) clobber
+doesNotClobber locationPool _            (_,clobber)    = doesNotClobber' (X.EFLAG `S.insert` locationPool) clobber
 
 doesNotClobber' locationPool clobber =
     let
         clobberSet              = S.fromList clobber
-        clobberAbleLocations    = S.fromList $ locationPool
+        clobberAbleLocations    = S.map X.RegisterLocation locationPool
     in
         clobberSet `S.union` clobberAbleLocations == clobberAbleLocations
 
@@ -488,7 +500,9 @@ currentByteOffset = do
 --------------------------------------------------------------------------------
 
 noop :: Statement
-noop = compileGadget G.NoOp
+noop = do
+    noops   <- lift $ drop 1 $ inits $ repeat G.NoOp
+    mapM_ compileGadget noops
 
 move :: (Paramable a, Paramable b) => a -> b -> Statement
 move dst src =
@@ -516,11 +530,13 @@ add dst val1 val2 =
 
 mul :: (Paramable a, Paramable b, Paramable c) => a -> b -> c -> Statement
 mul dst val1 val2 = 
-    asRegister val1 $ \val1Reg ->
-    asRegister val2 $ \val2Reg ->
-    saveAsRegister dst $ \dstReg -> do
-        compileGadget $ G.LoadReg dstReg val1Reg
-        compileGadget $ G.Times dstReg $ S.fromList [dstReg, val2Reg]
+    claimRegister [X.EAX] $ \dstReg -> do
+        asRegister val1 $ \val1Reg ->
+            asRegister val2 $ \val2Reg -> do
+                compileGadget $ G.LoadReg dstReg val1Reg
+                compileGadget $ G.Times dstReg $ S.fromList [dstReg, val2Reg]
+        saveAsRegister dst $ \dstReg ->
+            compileGadget $ G.LoadReg dstReg X.EAX
 
 xor :: (Paramable a, Paramable b, Paramable c) => a -> b -> c -> Statement
 xor dst val1 val2 = 
@@ -544,29 +560,45 @@ jump offsetLabel partialReason = do
     case reason of
         Always                  ->
             buildJump (G.Jump X.Always) offsetLabel
-        Because relation a b    -> 
+        Because relation a b    -> do
             asRegister a $ \aReg ->
-            asRegister b $ \bReg -> do
+                asRegister b $ \bReg ->
                 compileGadget $ G.Compare aReg bReg
-                buildJump (G.Jump relation) offsetLabel
+            buildJump (G.Jump relation) offsetLabel
 
-buildJump jumpFlavor offset = do
+buildJump :: (Integer -> G.Gadget) -> Label -> Statement
+buildJump jumpFlavor target = do
     state@CodeGenState{..}  <- get
     currentOffset           <- currentByteOffset
-    -- This is probably not ideal as it will cause generate cases for jumps that
-    -- do not exist, but it is _MUCH_ cleaner than acquiring a list of all valid
-    -- jump sizes.
+    maybeTargetOffset       <- lift $ maybeToList $ target `M.lookup` labelMap
     jumpLength              <- lift $ 0:[2..16]
-    let jumpHolder          = JumpHolder {
-        jumpFlavor      = jumpFlavor
-    ,   jumpPosition    = currentOffset
-    ,   jumpLength      = jumpLength
-    ,   jumpTarget      = offset
-    ,   jumpClobberable = locationPool
-    }
-    put $ state {
-        generatedCode = generatedCode ++ [Left jumpHolder]
-    }
+    case maybeTargetOffset of
+        Just targetOffset   -> do
+            let randomBytes =  translateGadgetThat
+                                    (isRightSize jumpLength)
+                                    state
+                                    (jumpFlavor (targetOffset - currentOffset - jumpLength))
+            (bytes,gen)     <- lift $ sampleStateT randomBytes randomGenerator
+            get >>= \state -> put $ state {
+                    generatedCode   = generatedCode ++ [Right bytes]
+                ,   randomGenerator = gen
+            }
+        Nothing             -> do
+            -- This is probably not ideal as it will cause generate cases for jumps that
+            -- do not exist, but it is _MUCH_ cleaner than acquiring a list of all valid
+            -- jump sizes.
+            let jumpHolder          = JumpHolder {
+                jumpFlavor      = jumpFlavor
+            ,   jumpPosition    = currentOffset
+            ,   jumpLength      = jumpLength
+            ,   jumpTarget      = target
+            ,   jumpClobberable = locationPool
+            }
+            put $ state {
+                generatedCode = generatedCode ++ [Left jumpHolder]
+            }
+    where
+        isRightSize jumpLength = (==jumpLength) . fromIntegral . B.length
 
 
 ---- | "Returns" from the method. This is done by jumping to the end of a method
@@ -584,10 +616,10 @@ always :: Partial JumpReason
 always = return Always
 
 buildJumpReason :: (Paramable a, Paramable b) => X.Reason -> a -> b -> Partial JumpReason
-buildJumpReason relation a b = do
+buildJumpReason relation a b =
     withParam a $ \aParam ->
-        withParam b $ \bParam ->
-        return $ Because relation aParam bParam
+    withParam b $ \bParam ->
+    return $ Because relation aParam bParam
 
 (->-) :: (Paramable a, Paramable b) => a -> b -> Partial JumpReason
 (->-) = buildJumpReason X.Greater
@@ -610,54 +642,7 @@ buildJumpReason relation a b = do
 ----------------------------------------------------------------------------------
 ---- External API
 ----------------------------------------------------------------------------------
---
---generate :: D.GadgetLibrary -> StdGen -> PredicateProgram -> Maybe GeneratedCode
---generate library gen program = listToMaybe $ do
---    let program'    = do
---        eoc <- makeLabel
---        program
---        label eoc
---    (_,solution)    <- runStateT program' $ initialState library gen
---    let eitherCode  = replaceAllJumpHolders solution -- Turn solution into [Either Meta Jump]
---    let byteCode    = B.concat $ rights eitherCode -- Turn the Either values into Meta lists and concats
---    -- Remove solutions with hanging jumps
---    guard $ (null . lefts) eitherCode
---    return GeneratedCode {
---            byteCode            = byteCode
---        ,   localVariableSize   = 0 - localVariableOffset solution
---    }
---    where
---        -- | Attempts to replace forward jump statements for a given element in
---        -- generatedCode. Because a jumpHolder may be replaced by several
---        -- instructions it is necessary to return a list of lists and then
---        -- concat the results.
---        replaceAllJumpHolders :: CodeGenState -> [Either JumpHolder B.ByteString]
---        replaceAllJumpHolders state@CodeGenState{..} = 
---            let
---                jumpReplacers   = map ((uncurry $ replaceJumpHolders state)) $ M.assocs predicateToByte
---                replacedCode    = foldrM mapM generatedCode jumpReplacers
---            in
---                fst $ sampleState (replacedCode :: RVar [Either JumpHolder B.ByteString]) randomGenerator
---
---        replaceJumpHolders :: CodeGenState -> Integer -> Integer -> Either JumpHolder B.ByteString -> RVar (Either JumpHolder B.ByteString)
---        replaceJumpHolders state@CodeGenState{..} predIndex byteOffset j@(Left (JumpHolder {..}))
---            | predIndex == labelToIndex state jumpTarget   = do
-----                let jumpGarbageSize         = if (predIndex-jumpIndex) <= 0
-----                                                then jumpLength + (fromIntegral $ B.length jumpPrefix)
-----                                                else jumpLength
---                let jumpGarbageSize         = jumpLength + (fromIntegral $ B.length jumpPrefix)
---                let jumpGadget              = (jumpFlavor (byteOffset - jumpByteOffset - jumpGarbageSize))
---                let gadgets                 = filter ((jumpLength==) . fromIntegral . B.length . fst)
---                                                $ concatMap S.toList
---                                                $ maybeToList
---                                                $ D.libraryLookup jumpGadget library
---                shuffled                    <- shuffle gadgets
---                case listToMaybe $ filter (doesNotClobber locationPool jumpGadget) $ shuffled of --shuffled
---                    Nothing         -> return j
---                    Just (meta,_)   -> return $ Right $ jumpPrefix `B.append` meta
---            | otherwise             = return j
---        replaceJumpHolders _ _ _ meta = return meta
---
+
 ---- | Create a variable for use with the predicate functions.
 makeLocal :: Partial Variable
 makeLocal = do
@@ -720,7 +705,7 @@ makeLabel = do
     let indexLabel          = Label $ 1 + (maximum $ 0 : (map unLabel $ M.keys labelMap))
     currentOffset           <- currentByteOffset
     put $ state {
-        labelMap        = M.insert indexLabel currentOffset labelMap 
+        labelMap        = M.insert indexLabel Nothing labelMap 
     }
     return indexLabel
     
@@ -734,7 +719,7 @@ label l = do
     state@CodeGenState{..}    <- get
     currentOffset           <- currentByteOffset
     put $ state {
-        labelMap        = M.insert l currentOffset labelMap 
+        labelMap        = M.insert l (Just currentOffset) labelMap 
     }
 
 generate :: D.GadgetLibrary -> StdGen -> Program -> Maybe GeneratedCode
@@ -763,76 +748,8 @@ generate library gen program = listToMaybe $ do
         replaceJumpHolder state (Right bytes)             = return bytes
         replaceJumpHolder state (Left (JumpHolder{..}))    = do
             let oldState = state { locationPool = jumpClobberable }
-            targetOffset <- lift $ maybeToList $ jumpTarget `M.lookup` labelMap oldState
+            targetOffset <- lift $  maybeToList $ join $ jumpTarget `M.lookup` labelMap oldState
             translateGadgetThat isRightSize oldState (jumpFlavor (targetOffset - jumpPosition - jumpLength))
             where
                 isRightSize = (==jumpLength) . fromIntegral . B.length
 
-
---        replaceAllJumpHolders :: CodeGenState -> [Either JumpHolder B.ByteString]
---        -- | Attempts to replace 'JumpHolder's in the byte stream with a given element in
---        -- generatedCode. Because a JumpHolder may be replaced by several
---        -- instructions it is necessary to return a list of lists and then
---        -- concat the results.
---        replaceAllJumpHolders :: CodeGenState -> [Either JumpHolder B.ByteString]
---        replaceAllJumpHolders state@CodeGenState{..} = 
---            let
---                jumpReplacers   = map ((uncurry $ replaceJumpHolders state)) $ M.assocs predicateToByte
---                replacedCode    = foldrM mapM generatedCode jumpReplacers
---            in
---                fst $ sampleState (replacedCode :: RVar [Either JumpHolder B.ByteString]) randomGenerator
---
---        replaceJumpHolders :: CodeGenState -> Integer -> Integer -> Either JumpHolder B.ByteString -> RVar (Either JumpHolder B.ByteString)
---        replaceJumpHolders state@CodeGenState{..} predIndex byteOffset j@(Left (JumpHolder {..}))
---            | predIndex == labelToIndex state jumpTarget   = do
-----                let jumpGarbageSize         = if (predIndex-jumpIndex) <= 0
-----                                                then jumpLength + (fromIntegral $ B.length jumpPrefix)
-----                                                else jumpLength
---                let jumpGarbageSize         = jumpLength + (fromIntegral $ B.length jumpPrefix)
---                let jumpGadget              = (jumpFlavor (byteOffset - jumpByteOffset - jumpGarbageSize))
---                let gadgets                 = filter ((jumpLength==) . fromIntegral . B.length . fst)
---                                                $ concatMap S.toList
---                                                $ maybeToList
---                                                $ D.libraryLookup jumpGadget library
---                shuffled                    <- shuffle gadgets
---                case listToMaybe $ filter (doesNotClobber locationPool jumpGadget) $ shuffled of --shuffled
---                    Nothing         -> return j
---                    Just (meta,_)   -> return $ Right $ jumpPrefix `B.append` meta
---            | otherwise             = return j
---        replaceJumpHolders _ _ _ meta = return meta
---
---
---
---
---
---    where
---        -- | Attempts to replace forward jump statements for a given element in
---        -- generatedCode. Because a jumpHolder may be replaced by several
---        -- instructions it is necessary to return a list of lists and then
---        -- concat the results.
---        replaceAllJumpHolders :: CodeGenState -> [Either JumpHolder B.ByteString]
---        replaceAllJumpHolders state@CodeGenState{..} = 
---            let
---                jumpReplacers   = map ((uncurry $ replaceJumpHolders state)) $ M.assocs predicateToByte
---                replacedCode    = foldrM mapM generatedCode jumpReplacers
---            in
---                fst $ sampleState (replacedCode :: RVar [Either JumpHolder B.ByteString]) randomGenerator
---
---        replaceJumpHolders :: CodeGenState -> Integer -> Integer -> Either JumpHolder B.ByteString -> RVar (Either JumpHolder B.ByteString)
---        replaceJumpHolders state@CodeGenState{..} predIndex byteOffset j@(Left (JumpHolder {..}))
---            | predIndex == labelToIndex state jumpTarget   = do
-----                let jumpGarbageSize         = if (predIndex-jumpIndex) <= 0
-----                                                then jumpLength + (fromIntegral $ B.length jumpPrefix)
-----                                                else jumpLength
---                let jumpGarbageSize         = jumpLength + (fromIntegral $ B.length jumpPrefix)
---                let jumpGadget              = (jumpFlavor (byteOffset - jumpByteOffset - jumpGarbageSize))
---                let gadgets                 = filter ((jumpLength==) . fromIntegral . B.length . fst)
---                                                $ concatMap S.toList
---                                                $ maybeToList
---                                                $ D.libraryLookup jumpGadget library
---                shuffled                    <- shuffle gadgets
---                case listToMaybe $ filter (doesNotClobber locationPool jumpGadget) $ shuffled of --shuffled
---                    Nothing         -> return j
---                    Just (meta,_)   -> return $ Right $ jumpPrefix `B.append` meta
---            | otherwise             = return j
---        replaceJumpHolders _ _ _ meta = return meta

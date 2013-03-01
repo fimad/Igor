@@ -128,7 +128,7 @@ generate :: Source -> Generator
 generate !model = do
     !words       <- model
     -- attempt to disassemble them
-    let !result  = disassembleMetadata' hdisConfig $ words 
+    let !result  = disassembleMetadata hdisConfig $ words 
     -- if successful return the instruction list, otherwise try again
     case result of
         []        -> generate model

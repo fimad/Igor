@@ -134,6 +134,6 @@ discoverMore targetIncrease !generator library =  discover' library
         -- gadget library
         process :: [Metadata] -> [(G.Gadget,(B.ByteString,G.ClobberList))]
         process stream = do
-            (gadget, clobber) <- concat $ maybeToList $ eval stream >>= return . G.match
-            return (gadget, (B.concat $ map mdBytes stream,clobber))
+            !(gadget, clobber) <- concat $ maybeToList $ eval stream >>= return . G.match
+            return $! (gadget, (B.concat $ map mdBytes stream,clobber))
 

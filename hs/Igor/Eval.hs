@@ -166,6 +166,7 @@ eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Imul})     
     dstExpr                             <- valueOf (Just dstLocation) state'
     srcExpr                             <- operandToExpression src state'
     let dstValue                        =  Times dstExpr srcExpr
+    guard (length (H.inOperands instruction) == 1)
     return $ (M.insert clobberedLocation Clobbered $ M.insert dstLocation dstValue state', False)
 
 eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ixor})     = do

@@ -18,7 +18,7 @@ import              System.Random
 
 compile :: GadgetLibrary
         -> FilePath -- ^ Where to write the *.o file to
-        -> [(String,PredicateProgram)]  -- ^ A list of functions to generate
+        -> [(String,Program)]  -- ^ A list of functions to generate
         -> IO Bool -- ^ Was the file successfully generated?
 compile library file methods = do
     maybeMethods        <- mapM compileMethod methods
@@ -37,7 +37,7 @@ compile library file methods = do
             return True
         else return False
     where
-        compileMethod :: (String, PredicateProgram) -> IO (Maybe (String,B.ByteString,Integer))
+        compileMethod :: (String, Program) -> IO (Maybe (String,B.ByteString,Integer))
         compileMethod (methodName,methodBody) = do
             gen                         <- newStdGen
             return $ do 

@@ -1,8 +1,9 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE BangPatterns #-}
 module Igor.Expr
 ( 
 -- * Types
-  Address
+  Address (..)
 , Value
 , Register (..)
 , Reason (..)
@@ -18,9 +19,7 @@ import              Data.DeriveTH
 import              Data.Int
 import              Data.List
 import              Data.Word
-
-type Address = Word32
-
+--
 -- | Since we are only considering 32bit intel machines, values are always going
 -- to fit inside of a 32bit integer. 
 type Value = Int32
@@ -64,10 +63,15 @@ generalRegisters = [EAX, EBX, ECX, EDX, EDI, ESI]
 specialRegisters :: [Register]
 specialRegisters = [minBound .. maxBound] \\ generalRegisters
 
+data Address  = OffsetAddress Register Value
+              | IndexedAddress Register Register Value Value -- base index scale offset
+    deriving (Ord, Eq, Show, Read)
+
 -- | If you think of the state of a machine as a dictionary, Locations are keys,
 -- and include things like memory locations, registers and status flags.
 data Location = --MemoryLocation Address
-                MemoryLocation Register Value
+                --MemoryLocation Register Value
+                MemoryLocation Address
               | RegisterLocation Register 
     deriving (Ord, Eq, Show, Read)
 
@@ -92,12 +96,98 @@ data Expression = InitialValue Location
                 | Conditional Reason Expression
     deriving (Ord, Eq, Show, Read)
 
-$( derive makeBinary ''Reason )
-$( derive makeBinary ''Register )
-$( derive makeBinary ''Location )
-$( derive makeBinary ''Expression )
+instance Binary Register where
+    get = do
+        !byte   <-  getWord8
+        case byte of
+            0   -> return EAX
+            1   -> return EBX
+            2   -> return ECX
+            3   -> return EDX
+            4   -> return EDI
+            5   -> return ESI
+            6   -> return ESP
+            7   -> return EBP
+            8   -> return EIP 
+            9   -> return EFLAG
+
+    put EAX     = putWord8 0
+    put EBX     = putWord8 1
+    put ECX     = putWord8 2
+    put EDX     = putWord8 3
+    put EDI     = putWord8 4
+    put ESI     = putWord8 5
+    put ESP     = putWord8 6
+    put EBP     = putWord8 7
+    put EIP     = putWord8 8
+    put EFLAG   = putWord8 9
+
+instance Binary Address where
+    get = do
+        !byte    <-  getWord8
+        case byte of
+            0   -> do
+                !base        <- get
+                !value       <- get
+                return $! OffsetAddress base value
+            1   -> do
+                !base        <- get
+                !index       <- get
+                !scale       <- get
+                !value       <- get
+                return $! IndexedAddress base index scale value
+
+    put (OffsetAddress base value) = do
+        putWord8 0
+        put base
+        put value
+    put (IndexedAddress base index scale value) = do
+        putWord8 1
+        put base
+        put index
+        put scale
+        put value
+
+instance Binary Location where
+    get = do
+        !byte    <-  getWord8
+        case byte of
+            0   -> do
+                !address     <- get
+                return $! MemoryLocation address
+            1   -> do
+                !register    <- get
+                return $! RegisterLocation register
+
+    put (MemoryLocation address) = do
+        putWord8 0
+        put address
+    put (RegisterLocation register) = do
+        putWord8 1
+        put register
+
+instance Binary Reason where
+    get = do
+        !byte   <-  getWord8
+        case byte of
+            0   -> return Always
+            1   -> return GreaterEqual
+            2   -> return Greater
+            3   -> return LessEqual
+            4   -> return Less
+            5   -> return Equal
+            6   -> return NotEqual
+
+    put Always          = putWord8 0
+    put GreaterEqual    = putWord8 1
+    put Greater         = putWord8 2
+    put LessEqual       = putWord8 3
+    put Less            = putWord8 4
+    put Equal           = putWord8 5
+    put NotEqual        = putWord8 6
 
 $( derive makeNFData ''Reason )
 $( derive makeNFData ''Register )
+$( derive makeNFData ''Address )
 $( derive makeNFData ''Location )
 $( derive makeNFData ''Expression )

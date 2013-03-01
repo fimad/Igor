@@ -1,4 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE BangPatterns #-}
 module Igor.Gadget
 ( 
 -- * Types
@@ -26,8 +27,8 @@ import qualified    Igor.Expr   as X
 data Gadget = NoOp
             | LoadReg X.Register X.Register
             | LoadConst X.Register X.Value
-            | LoadMemReg X.Register X.Register X.Value
-            | StoreMemReg X.Register X.Value X.Register
+            | LoadMemReg X.Register X.Address
+            | StoreMemReg X.Address X.Register
             | Plus X.Register (S.Set X.Register)
             | Xor X.Register (S.Set X.Register)
             | Times X.Register (S.Set X.Register)
@@ -36,7 +37,105 @@ data Gadget = NoOp
             | Compare X.Register X.Register
             | Jump X.Reason Integer
     deriving (Ord, Eq, Show, Read)
-$( derive makeBinary ''Gadget )
+
+instance Binary Gadget where
+    get = do
+        !byte <- getWord8
+        case byte of
+            0   ->  return NoOp
+            1   ->  do
+                !r1  <- get
+                !r2  <- get
+                return $! LoadReg r1 r2
+            2   ->  do
+                !r1  <- get
+                !val <- get
+                return $! LoadConst r1 val
+            3   ->  do
+                !r   <- get
+                !a   <- get
+                return $! LoadMemReg r a
+            4   ->  do
+                !a   <- get
+                !r   <- get
+                return $! StoreMemReg a r
+            5   ->  do
+                !r   <- get
+                !s   <- get
+                return $! Plus r s
+            6   ->  do
+                !r  <- get
+                !s  <- get
+                return $! Xor r s
+            7   ->  do
+                !r  <- get
+                !s  <- get
+                return $! Times r s
+            8   ->  do
+                !r1 <- get
+                !r2 <- get
+                !r3 <- get
+                return $! Minus r1 r2 r3
+            9   ->  do
+                !r  <- get
+                !i  <- get
+                return $! RightShift r i
+            10  ->  do
+                !r1 <- get
+                !r2 <- get
+                return $! Compare r1 r2
+            11  ->  do
+                !r  <- get
+                !i  <- get
+                return $! Jump r i
+
+    put NoOp                = putWord8 0
+    put (LoadReg r1 r2)     = do
+                                putWord8 1
+                                put r1
+                                put r2
+    put (LoadConst r v)     = do
+                                putWord8 2
+                                put r
+                                put v
+    put (LoadMemReg r a)    = do
+                                putWord8 3
+                                put r
+                                put a
+    put (StoreMemReg a r)   = do
+                                putWord8 4
+                                put a
+                                put r
+    put (Plus r s)          = do
+                                putWord8 5
+                                put r
+                                put s
+    put (Xor r s)           = do
+                                putWord8 6
+                                put r
+                                put s
+    put (Times r s)         = do
+                                putWord8 7
+                                put r
+                                put s
+    put (Minus r1 r2 r3)    = do
+                                putWord8 8
+                                put r1
+                                put r2
+                                put r3
+    put (RightShift r i)    = do
+                                putWord8 9
+                                put r
+                                put i
+    put (Compare r1 r2)     = do
+                                putWord8 10
+                                put r1
+                                put r2
+    put (Jump r i)          = do
+                                putWord8 11
+                                put r
+                                put i
+
 $( derive makeNFData ''Gadget )
 
 type ClobberList = [X.Location]
@@ -47,8 +146,8 @@ type Match = (Gadget, ClobberList)
 defines :: Gadget -> [X.Location]
 defines (LoadReg        r _)    = [X.RegisterLocation r]
 defines (LoadConst      r _)    = [X.RegisterLocation r]
-defines (LoadMemReg     r _ _)  = [X.RegisterLocation r]
-defines (StoreMemReg    r v _)  = [X.MemoryLocation r v]
+defines (LoadMemReg     r _)  = [X.RegisterLocation r]
+defines (StoreMemReg    a _)    = [X.MemoryLocation a]
 defines (Plus           r _)    = [X.RegisterLocation r]
 defines (Xor            r _)    = [X.RegisterLocation r]
 defines (Times          r _)    = [X.RegisterLocation r]
@@ -125,15 +224,15 @@ matchGadgets source expression = catMaybes $ map ($ expression) gadgetMatchers
 
         matchLoadMemReg
             srcLoc@(X.RegisterLocation srcReg)
-            (X.InitialValue (X.MemoryLocation dstReg offset)) =
-                Just (LoadMemReg srcReg dstReg offset, [srcLoc])
+            (X.InitialValue (X.MemoryLocation address)) =
+                Just (LoadMemReg srcReg address, [srcLoc])
         matchLoadMemReg _ _ =
                 Nothing
 
         matchStoreMemReg
-            srcLoc@(X.MemoryLocation srcReg offset)
+            srcLoc@(X.MemoryLocation address)
             (X.InitialValue (X.RegisterLocation dstReg)) =
-                Just (StoreMemReg srcReg offset dstReg, [srcLoc])
+                Just (StoreMemReg address dstReg, [srcLoc])
         matchStoreMemReg _ _ =
                 Nothing
 

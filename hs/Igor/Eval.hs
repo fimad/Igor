@@ -63,9 +63,11 @@ gprToRegister _     = Nothing
 -- | Convert an operand into a location
 operandToLocation :: H.Operand -> Maybe Location
 operandToLocation (H.Mem (H.Memory _ (H.Reg32 base) (H.RegNone) _ (H.Immediate _ off))) =
-    (gprToRegister base) >>= return . (flip MemoryLocation) (fromIntegral off)
---operandToLocation (H.Mem (H.Memory _ (H.RegNone) (H.Reg32 base@H.RBP) 1 (H.Immediate _ off))) =
---    (gprToRegister base) >>= return . (flip MemoryLocation) (fromIntegral off)
+    (gprToRegister base) >>= return . MemoryLocation . (flip OffsetAddress) (fromIntegral off)
+operandToLocation (H.Mem (H.Memory _ (H.Reg32 base) (H.Reg32 index) scale (H.Immediate _ off))) = do
+    baseReg     <- gprToRegister base
+    indexReg    <- gprToRegister index
+    return $ MemoryLocation $ IndexedAddress baseReg indexReg (fromIntegral scale) (fromIntegral off)
 operandToLocation (H.Reg (H.Reg32 reg))     = (gprToRegister reg) >>= return . RegisterLocation
 operandToLocation _                         = Nothing
 
@@ -195,7 +197,7 @@ eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ipush})    
     srcValue    <- operandToExpression src state
     case valueOf (Just $ RegisterLocation ESP) state of
         Just (InitialValue (RegisterLocation ESP))  -> return (
-                                                          M.insert (MemoryLocation ESP (-4)) srcValue
+                                                          M.insert (MemoryLocation $ OffsetAddress ESP (-4)) srcValue
                                                         $ M.insert (RegisterLocation ESP)
                                                             (Minus (InitialValue (RegisterLocation ESP)) (Constant 4))
                                                           state
@@ -207,7 +209,7 @@ eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ipop})     
     srcLocation <- operandToLocation src
     case valueOf (Just $ RegisterLocation ESP) state of
         Just (InitialValue (RegisterLocation ESP))  -> return (
-                                                          M.insert srcLocation (InitialValue $ MemoryLocation ESP 0)
+                                                          M.insert srcLocation (InitialValue $ MemoryLocation $ OffsetAddress ESP 0)
                                                         $ M.insert (RegisterLocation ESP)
                                                             (Plus (InitialValue (RegisterLocation ESP)) (Constant 4))
                                                           state

@@ -511,25 +511,15 @@ noop = do
 
 move :: (Paramable a, Paramable b) => a -> b -> Statement
 move dst src =
-    asRegister src $ \srcReg ->
     saveAsRegister dst $ \dstReg ->
+    asRegister src $ \srcReg ->
         compileGadget $ G.LoadReg dstReg srcReg
-
---move dst src = withParam dst moveToDst
---    where
---        moveToDst (Register dstReg) = 
---            asRegister src $ \srcReg ->
---            compileGadget $ G.LoadReg dstReg srcReg
---        moveToDst (Memory dstAddr)  = 
---            asRegister src $ \srcReg ->
---            compileGadget $ G.StoreMemReg dstAddr srcReg
---        moveToDst _                 = fail "Attempting to move to a non-location."
 
 add :: (Paramable a, Paramable b, Paramable c) => a -> b -> c -> Statement
 add dst val1 val2 = 
+    saveAsRegister dst $ \dstReg ->
     asRegister val1 $ \val1Reg ->
-    asRegister val2 $ \val2Reg ->
-    saveAsRegister dst $ \dstReg -> do
+    asRegister val2 $ \val2Reg -> do
         compileGadget $ G.LoadReg dstReg val1Reg
         compileGadget $ G.Plus dstReg $ S.fromList [dstReg, val2Reg]
 
@@ -545,17 +535,17 @@ mul dst val1 val2 =
 
 xor :: (Paramable a, Paramable b, Paramable c) => a -> b -> c -> Statement
 xor dst val1 val2 = 
+    saveAsRegister dst $ \dstReg ->
     asRegister val1 $ \val1Reg ->
-    asRegister val2 $ \val2Reg -> 
-    saveAsRegister dst $ \dstReg -> do
+    asRegister val2 $ \val2Reg -> do
         compileGadget $ G.LoadReg dstReg val1Reg
         compileGadget $ G.Xor dstReg $ S.fromList [dstReg, val2Reg]
 
 sub :: (Paramable a, Paramable b, Paramable c) => a -> b -> c -> Statement
 sub dst val1 val2 = 
+    saveAsRegister dst $ \dstReg ->
     asRegister val1 $ \val1Reg ->
-    asRegister val2 $ \val2Reg ->
-    saveAsRegister dst $ \dstReg -> do
+    asRegister val2 $ \val2Reg -> do
         compileGadget $ G.LoadReg dstReg val1Reg
         compileGadget $ G.Minus dstReg dstReg val2Reg
 

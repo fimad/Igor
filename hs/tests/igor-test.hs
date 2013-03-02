@@ -64,18 +64,23 @@ insertSort = do
     [currentIndex, tmpIndex, tmp] <- makeLocals 3
     [outer_loop, inner_loop] <- makeLabels 2
 
-    move    currentIndex                (0 :: Integer)
+    move    tmp         (0 :: Integer)
+    add     tmp         tmp   (R,array,0)
+    add     tmp         tmp   (R,array,4)
+    move    (W,array,8) tmp
 
-    label   outer_loop
-    move    tmpIndex                    currentIndex
-
-    label   inner_loop
---    move    tmp                         (array,tmpIndex,4,0)
---    move    (array,tmpIndex,4,0)        (array,currentIndex,4,0)       
---    move    (array,currentIndex,4,0)    tmp
-    sub     tmpIndex                    tmpIndex            (1 :: Integer)
-    jump    inner_loop                  always
-
-    add     currentIndex                currentIndex        (1 :: Integer)
-    jump    outer_loop                  (currentIndex -<- length)
+--    move    currentIndex                (0 :: Integer)
+--
+--    label   outer_loop
+--    move    tmpIndex                    currentIndex
+--
+--    label   inner_loop
+--    move    tmp                         (R,array,tmpIndex,4,0)
+----    move    (R,array,tmpIndex,4,0)        (R,array,currentIndex,4,0)       
+----    move    (R,array,currentIndex,4,0)    tmp
+--    sub     tmpIndex                    tmpIndex            (1 :: Integer)
+--    jump    inner_loop                  always
+--
+--    add     currentIndex                currentIndex        (1 :: Integer)
+--    jump    outer_loop                  (currentIndex -<- length)
 

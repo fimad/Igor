@@ -6,6 +6,7 @@ module Igor.CodeGen
 -- * Types
   Variable
 , CodeGenState
+, MemoryAccessType (..)
 , Partial
 , Program
 , GeneratedCode(..)
@@ -95,6 +96,10 @@ type Statement          = Program
 -- | A Partial is a part of a statement, it performs some underlying code
 -- generation task and returns a value.
 type Partial a          = StateT CodeGenState [] a
+
+-- | The type of memory access that we will be performing. This isn't strictly
+-- necessary but is very useful in reducing the search space.
+data MemoryAccessType   = R | W
 
 -- | The types of parameters that can be passed to a partial statement
 data Param              = Constant  Integer
@@ -228,19 +233,37 @@ instance Paramable Param where
     withParam = flip ($)
 
 -- | An offset memory dereference.
-instance (Paramable a, Integral b) => Paramable (a,b) where
-    withParam (baseParam,offset) method =
-        asRegister baseParam $ \baseReg ->
-            method $ Memory $ X.OffsetAddress baseReg (fromIntegral offset)
+instance (Paramable a, Integral b) => Paramable (MemoryAccessType,a,b) where
+    -- | By immediately loading the value into a register it prevents us from
+    -- holding many temporary registers that can be used elsewhere.
+    withParam (R,baseParam,offset) method = do
+        valueReg <-
+            asRegister baseParam $ \baseReg ->
+                asRegister (Memory $ X.OffsetAddress baseReg (fromIntegral offset)) $ \valueReg ->
+                    return valueReg
+        reserveRegisterFor valueReg $ method (Register valueReg)
+
+    withParam (W,baseParam,offset) method = do
+        CodeGenState{..}    <-  get
+        baseMap             <-  lift $ maybeToList $ (fromIntegral offset) `M.lookup` validOffsetWrites
+        claimRegister (M.keys baseMap) $ \tmpBaseReg -> do
+            asRegister baseParam $ \baseReg ->
+                compileGadget $ G.LoadReg tmpBaseReg baseReg
+            let valueRegs = (join $ maybeToList $ tmpBaseReg `M.lookup` baseMap) 
+            claimRegister valueRegs $ \valueReg -> do
+                result <- method (Register valueReg)
+                compileGadget $ G.StoreMemReg (X.OffsetAddress tmpBaseReg (fromIntegral offset) ) valueReg 
+                return result
 
 -- | An indexed memory dereference.
-instance (Paramable a, Paramable b, Integral c, Integral d) => Paramable (a,b,c,d) where
-    withParam (baseParam,indexParam,scale,offset) method =
-        asRegister baseParam $ \baseReg ->
-        asRegister indexParam $ \indexReg ->
-            method $ Memory $ X.IndexedAddress baseReg indexReg (fromIntegral scale) (fromIntegral offset)
-
--- TODO: Write instances of Paramable for memory locations
+instance (Paramable a, Paramable b, Integral c, Integral d) => Paramable (MemoryAccessType,a,b,c,d) where
+    withParam (R,baseParam,indexParam,scale,offset) method = do
+        valueReg <-
+            asRegister baseParam $ \baseReg ->
+            asRegister indexParam $ \indexReg ->
+                asRegister (Memory $ X.IndexedAddress baseReg indexReg (fromIntegral scale) (fromIntegral offset)) $ \valueReg ->
+                    return valueReg
+        reserveRegisterFor valueReg $ method (Register valueReg)
 
 -- | Returns a shuffled version of location pool wrapped in a partial.
 randomLocationPool :: Partial [X.Register]
@@ -321,7 +344,7 @@ saveAsRegister paramable method =
         savingMethod method (Memory (X.OffsetAddress baseReg offset)) = do
             CodeGenState{..}    <-  get
             baseMap             <-  lift $ maybeToList $ offset `M.lookup` validOffsetWrites
-            claimRegisterIfNot baseReg (M.keys baseMap) $ \tmpBaseReg -> do
+            claimRegisterIfNot baseReg (baseReg : M.keys baseMap) $ \tmpBaseReg -> do
                 compileGadget $ G.LoadReg tmpBaseReg baseReg
                 let valueRegs = (join $ maybeToList $ tmpBaseReg `M.lookup` baseMap) 
                 claimRegister valueRegs $ \valueReg -> do
@@ -332,10 +355,10 @@ saveAsRegister paramable method =
         savingMethod method (Memory (X.IndexedAddress baseReg indexReg scale offset)) = do
             CodeGenState{..}    <-  get
             baseMap             <-  lift $ maybeToList $ (scale,offset) `M.lookup` validIndexedWrites
-            claimRegisterIfNot baseReg (M.keys baseMap) $ \tmpBaseReg -> do
+            claimRegisterIfNot baseReg (baseReg : M.keys baseMap) $ \tmpBaseReg -> do
                 indexMap        <-  lift $ maybeToList $ tmpBaseReg `M.lookup` baseMap
                 compileGadget $ G.LoadReg tmpBaseReg baseReg
-                claimRegisterIfNot indexReg (M.keys indexMap) $ \tmpIndexReg -> do
+                claimRegisterIfNot indexReg (indexReg : M.keys indexMap) $ \tmpIndexReg -> do
                     compileGadget $ G.LoadReg tmpIndexReg indexReg
                     let valueRegs = (join $ maybeToList $ tmpIndexReg `M.lookup` indexMap) 
                     claimRegister valueRegs $ \valueReg -> do
@@ -367,28 +390,33 @@ asRegister paramable method =
                         compileGadget         $ G.LoadReg tempReg reg
                     method tempReg
 
-        asRegister' (Memory address)   method = 
-            withTempRegister' $ \tempReg -> do
-                possibleTranslations tempReg address
-                method tempReg
-            where
-            -- Tries every possible way of accessing a given memory address
-                possibleTranslations tempReg addr@(X.OffsetAddress baseReg offset) = 
-                    withTempRegister [baseReg] $ \tempBaseReg -> do
-                        tempDstReg <- withTempRegister [tempReg] $ \tempDstReg -> do
-                            compileGadget $ G.LoadReg tempBaseReg baseReg
-                            compileGadget $ G.LoadMemReg tempDstReg (X.OffsetAddress tempBaseReg offset)
-                            return tempDstReg
-                        reserveRegisterFor tempDstReg $
-                            compileGadget $ G.LoadReg tempReg tempDstReg
-                possibleTranslations tempReg addr@(X.IndexedAddress baseReg indexReg scale offset) = 
-                    withTempRegister [tempReg] $ \tempDstReg ->
-                    withTempRegister [baseReg] $ \tempBaseReg -> 
-                    withTempRegister [indexReg] $ \tempIndexReg -> do
-                            compileGadget $ G.LoadReg tempBaseReg baseReg
-                            compileGadget $ G.LoadReg tempIndexReg indexReg
-                            compileGadget $ G.LoadMemReg tempDstReg (X.IndexedAddress tempBaseReg tempIndexReg scale offset)
-                            compileGadget $ G.LoadReg tempReg tempDstReg
+        asRegister' (Memory addr@(X.OffsetAddress baseReg offset)) method = do
+            CodeGenState{..}    <-  get
+            baseMap             <-  lift $ maybeToList $ offset `M.lookup` validOffsetReads
+            valueReg            <- 
+                claimRegisterIfNot baseReg (baseReg : M.keys baseMap) $ \tmpBaseReg -> do
+                    compileGadget $ G.LoadReg tmpBaseReg baseReg
+                    let valueRegs = (join $ maybeToList $ tmpBaseReg `M.lookup` baseMap) 
+                    claimRegister valueRegs $ \valueReg -> do
+                        compileGadget $ G.LoadMemReg valueReg (X.OffsetAddress tmpBaseReg offset)
+                        return valueReg
+            reserveRegisterFor valueReg $ method valueReg
+
+        asRegister' (Memory addr@(X.IndexedAddress baseReg indexReg scale offset)) method = do
+            CodeGenState{..}    <-  get
+            baseMap             <-  lift $ maybeToList $ (scale,offset) `M.lookup` validIndexedWrites
+            valueReg            <-
+                claimRegisterIfNot baseReg (baseReg : M.keys baseMap) $ \tmpBaseReg -> do
+                    indexMap        <-  lift $ maybeToList $ tmpBaseReg `M.lookup` baseMap
+                    compileGadget $ G.LoadReg tmpBaseReg baseReg
+                    claimRegisterIfNot indexReg (indexReg : M.keys indexMap) $ \tmpIndexReg -> do
+                        compileGadget $ G.LoadReg tmpIndexReg indexReg
+                        let valueRegs = (join $ maybeToList $ tmpIndexReg `M.lookup` indexMap) 
+                        claimRegister valueRegs $ \valueReg -> do
+                            compileGadget $ G.StoreMemReg (X.IndexedAddress tmpBaseReg tmpIndexReg scale offset) valueReg 
+                            return valueReg
+            reserveRegisterFor valueReg $ method valueReg
+
 
         asRegister' (Constant value)   method = 
             withTempRegister' $ \valueReg -> do

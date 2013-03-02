@@ -145,6 +145,12 @@ data CodeGenState       = CodeGenState {
     ,   localVariableOffset :: Integer -- ^ How far from EBP should we assign the next local variable?
     ,   endOfCodeLabel      :: Label -- ^ Marks the end of body. Used for jumping out to return.
     ,   inputVariableOffset :: Integer -- ^ How much room on the stack is reserved for the input variables
+    -- | Map from offset to maps from the base register to value registers
+    ,   validOffsetReads    :: M.Map X.Value (M.Map X.Register [X.Register])
+    ,   validOffsetWrites   :: M.Map X.Value (M.Map X.Register [X.Register])
+    -- | Map from (scale,offset) to maps from the base register to maps from the index to value registers
+    ,   validIndexedReads   :: M.Map (X.Value,X.Value) (M.Map X.Register (M.Map X.Register [X.Register]))
+    ,   validIndexedWrites  :: M.Map (X.Value,X.Value) (M.Map X.Register (M.Map X.Register [X.Register]))
     }
 
 initialState :: D.GadgetLibrary -> StdGen -> CodeGenState
@@ -160,11 +166,45 @@ initialState library gen = CodeGenState {
      -- ebp to esp, which is dependent on the backend scaffolding ... ugh....
     ,   inputVariableOffset = 16
     ,   endOfCodeLabel      = Label 1 -- ^ The end of code label will always be the first label made.
+    ,   validOffsetReads    = foldl' getValidOffsetReads M.empty $ M.keys $ D.gadgetMap library
+    ,   validOffsetWrites   = foldl' getValidOffsetWrites M.empty $ M.keys $ D.gadgetMap library
+    ,   validIndexedReads    = foldl' getValidIndexedReads M.empty $ M.keys $ D.gadgetMap library
+    ,   validIndexedWrites    = foldl' getValidIndexedWrites M.empty $ M.keys $ D.gadgetMap library
     }
     where
         --pool                    = map X.RegisterLocation X.generalRegisters
         --(shuffledPool, gen')    = sampleState (shuffle pool) gen
         shuffledPool    = S.fromList X.generalRegisters
+        
+        getValidOffsetReads theMap (G.LoadMemReg valReg (X.OffsetAddress baseReg offset)) = 
+            M.insert offset (M.insert baseReg (valReg:valueRegs) offsetMap) theMap
+            where
+                offsetMap   = fromMaybe M.empty $ offset `M.lookup` theMap
+                valueRegs   = fromMaybe [] $ baseReg `M.lookup` offsetMap
+        getValidOffsetReads theMap _  = theMap
+        
+        getValidOffsetWrites theMap (G.StoreMemReg (X.OffsetAddress baseReg offset) valReg) = 
+            M.insert offset (M.insert baseReg (valReg:valueRegs) offsetMap) theMap
+            where
+                offsetMap   = fromMaybe M.empty $ offset `M.lookup` theMap
+                valueRegs   = fromMaybe [] $ baseReg `M.lookup` offsetMap
+        getValidOffsetWrites theMap _  = theMap
+        
+        getValidIndexedReads theMap (G.LoadMemReg valReg (X.IndexedAddress baseReg indexReg scale offset)) = 
+            M.insert (scale,offset) (M.insert baseReg (M.insert indexReg (valReg:valueRegs) baseMap) offsetMap) theMap
+            where
+                offsetMap   = fromMaybe M.empty $ (scale,offset) `M.lookup` theMap
+                baseMap     = fromMaybe M.empty $ baseReg `M.lookup` offsetMap
+                valueRegs   = fromMaybe [] $ indexReg `M.lookup` baseMap
+        getValidIndexedReads theMap _  = theMap
+        
+        getValidIndexedWrites theMap (G.StoreMemReg (X.IndexedAddress baseReg indexReg scale offset) valReg) = 
+            M.insert (scale,offset) (M.insert baseReg (M.insert indexReg (valReg:valueRegs) baseMap) offsetMap) theMap
+            where
+                offsetMap   = fromMaybe M.empty $ (scale,offset) `M.lookup` theMap
+                baseMap     = fromMaybe M.empty $ baseReg `M.lookup` offsetMap
+                valueRegs   = fromMaybe [] $ indexReg `M.lookup` baseMap
+        getValidIndexedWrites theMap _  = theMap
         
 
 --------------------------------------------------------------------------------
@@ -237,6 +277,16 @@ claimRegister desired method = do
     let available           =   S.fromList desired `S.intersection` locationPool
     chosen                  <-  lift $ S.toList available
     reserveRegisterFor chosen $ method chosen
+
+-- | Similar to 'claimRegister' except that if the chosen register is equal to
+-- the first parameter it will not attempt to claim the register (typically
+-- because it has already been claimed).
+claimRegisterIfNot :: X.Register -> [X.Register] -> (X.Register -> Partial b) -> Partial b
+claimRegisterIfNot thisRegister otherRegisters method = do
+    chosenRegister <- lift $ otherRegisters
+    if chosenRegister == thisRegister
+        then method thisRegister
+        else claimRegister [chosenRegister] method
     
 
 -- | Allocates and a temporary register for use with a method and then
@@ -260,35 +310,40 @@ withTempRegister' = withTempRegister []
 -- complete, stores the value in param.
 saveAsRegister :: Paramable p => p -> (X.Register -> Partial b) -> Partial b
 saveAsRegister paramable method =
-    withParam paramable $ flip saveAsRegister' method
+    withParam paramable $ savingMethod method
     where
-        saveAsRegister' :: Param -> (X.Register -> Partial b) -> Partial b
-        saveAsRegister' param method =
-            withTempRegister' (savingMethod param)
-            where
-                savingMethod (Register dstReg)  reg = do
-                    result <- method reg
-                    compileGadget $ G.LoadReg dstReg reg
+        savingMethod method (Register dstReg) =
+            withTempRegister [dstReg] $ \reg -> do
+                result <- method reg
+                compileGadget $ G.LoadReg dstReg reg
+                return result
+
+        savingMethod method (Memory (X.OffsetAddress baseReg offset)) = do
+            CodeGenState{..}    <-  get
+            baseMap             <-  lift $ maybeToList $ offset `M.lookup` validOffsetWrites
+            claimRegisterIfNot baseReg (M.keys baseMap) $ \tmpBaseReg -> do
+                compileGadget $ G.LoadReg tmpBaseReg baseReg
+                let valueRegs = (join $ maybeToList $ tmpBaseReg `M.lookup` baseMap) 
+                claimRegister valueRegs $ \valueReg -> do
+                    result <- method valueReg
+                    compileGadget $ G.StoreMemReg (X.OffsetAddress tmpBaseReg offset) valueReg 
                     return result
-                savingMethod (Memory (X.OffsetAddress baseReg offset))   reg = do
-                    result <- method reg
-                    withTempRegister [reg] $ \tmpReg -> do
-                        compileGadget $ G.LoadReg tmpReg reg
-                        withTempRegister [baseReg] $ \tempBaseReg -> do
-                            compileGadget $ G.LoadReg tempBaseReg baseReg
-                            compileGadget $ G.StoreMemReg (X.OffsetAddress tempBaseReg offset) tmpReg
-                    return result
-                savingMethod (Memory (X.IndexedAddress baseReg indexReg scale offset))   reg = do
-                    result <- method reg
-                    withTempRegister [reg] $ \tmpReg -> do
-                        compileGadget $ G.LoadReg tmpReg reg
-                        withTempRegister [baseReg] $ \tempBaseReg -> do
-                            compileGadget $ G.LoadReg tempBaseReg baseReg
-                            withTempRegister [indexReg] $ \tempIndexReg -> do
-                                compileGadget $ G.LoadReg tempIndexReg indexReg
-                                compileGadget $ G.StoreMemReg (X.IndexedAddress tempBaseReg tempIndexReg scale offset) tmpReg
-                    return result
-                savingMethod _                  reg = error "Attempting to save to a non-location."
+
+        savingMethod method (Memory (X.IndexedAddress baseReg indexReg scale offset)) = do
+            CodeGenState{..}    <-  get
+            baseMap             <-  lift $ maybeToList $ (scale,offset) `M.lookup` validIndexedWrites
+            claimRegisterIfNot baseReg (M.keys baseMap) $ \tmpBaseReg -> do
+                indexMap        <-  lift $ maybeToList $ tmpBaseReg `M.lookup` baseMap
+                compileGadget $ G.LoadReg tmpBaseReg baseReg
+                claimRegisterIfNot indexReg (M.keys indexMap) $ \tmpIndexReg -> do
+                    compileGadget $ G.LoadReg tmpIndexReg indexReg
+                    let valueRegs = (join $ maybeToList $ tmpIndexReg `M.lookup` indexMap) 
+                    claimRegister valueRegs $ \valueReg -> do
+                        result <- method valueReg
+                        compileGadget $ G.StoreMemReg (X.IndexedAddress tmpBaseReg tmpIndexReg scale offset) valueReg 
+                        return result
+
+        savingMethod _                  reg = error "Attempting to save to a non-location."
 
 -- | Moves the value described by a 'Paramable' into a temporary register that
 -- will be freed at the end of the method. Note that this method will fail if
@@ -490,17 +545,17 @@ mul dst val1 val2 =
 
 xor :: (Paramable a, Paramable b, Paramable c) => a -> b -> c -> Statement
 xor dst val1 val2 = 
-    saveAsRegister dst $ \dstReg ->
     asRegister val1 $ \val1Reg ->
-    asRegister val2 $ \val2Reg -> do
+    asRegister val2 $ \val2Reg -> 
+    saveAsRegister dst $ \dstReg -> do
         compileGadget $ G.LoadReg dstReg val1Reg
         compileGadget $ G.Xor dstReg $ S.fromList [dstReg, val2Reg]
 
 sub :: (Paramable a, Paramable b, Paramable c) => a -> b -> c -> Statement
 sub dst val1 val2 = 
-    saveAsRegister dst $ \dstReg ->
     asRegister val1 $ \val1Reg ->
-    asRegister val2 $ \val2Reg -> do
+    asRegister val2 $ \val2Reg ->
+    saveAsRegister dst $ \dstReg -> do
         compileGadget $ G.LoadReg dstReg val1Reg
         compileGadget $ G.Minus dstReg dstReg val2Reg
 
@@ -524,6 +579,8 @@ buildJump jumpFlavor target = do
     jumpLength              <- lift $ 0:[2..16]
     case maybeTargetOffset of
         Just targetOffset   -> do
+            -- We can't jump backward with a 0 length jump...
+            guard $ jumpLength > 0
             let randomBytes =  translateGadgetThat
                                     (isRightSize jumpLength)
                                     state

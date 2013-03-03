@@ -11,13 +11,13 @@ main = do
     args        <- getArgs
     progName    <- getProgName
     case args of
-        [file,"uniform"]        -> doDiscover file $ uniform 16
+        [file,"uniform"]        -> doDiscover file (IncreaseSizeBy 10000) $ uniform 16
 
         [file,"dist",distFile]  ->  decodeFile distFile 
                                 >>= return . (fromDistribution 16)
-                                >>= doDiscover file
+                                >>= doDiscover file (IncreaseSizeBy 10000)
 
-        [file,"scan",path]      ->  doDiscover file =<< fromFilePath 16 path
+        [file,"scan",path]      ->  doDiscover file (UntilFailure) =<< fromFilePath 16 path
 
         _                       ->
             putStrLn $ concat $ [
@@ -26,8 +26,8 @@ main = do
                 ,   "       ", progName, " gadgetLibraryFile scan path/to/scan"
                 ]
 
-doDiscover :: FilePath -> Source -> IO ()
-doDiscover file source = do
+doDiscover :: FilePath -> StopCondition -> Source -> IO ()
+doDiscover file stopCondition source = do
     let generator   = generate source
     fileExists      <- doesFileExist file
     existingLibrary <- if fileExists
@@ -37,7 +37,7 @@ doDiscover file source = do
                             else
                                 return emptyLibrary
     putStrLn "Looking for gadgets..."
-    newLibrary      <- discoverMore (IncreaseSizeBy 10000) generator existingLibrary
+    newLibrary      <- discoverMore stopCondition generator existingLibrary
     putStrLn "Working..."
     saveLibrary file newLibrary
     putStrLn "Done!"

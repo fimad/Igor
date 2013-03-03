@@ -18,6 +18,7 @@ module Igor.ByteModel
 ) where
 
 import              Control.Applicative
+import              Control.Concurrent.MVar
 import              Control.DeepSeq
 import              Control.Monad
 import              Codec.Compression.GZip
@@ -117,21 +118,21 @@ fromDistribution numBytes byteDist = do
     return $! Just $ B.pack (result :: [Word8])
 
 -- | Implements the original authors original gadget discovery method.
-fromFilePath :: Int -> FilePath -> Source
+fromFilePath :: Int -> FilePath -> IO Source
 fromFilePath byteWindow filepath = do
     -- | This will allow us to keep state between calls to this Source. The
     -- state in this case is the remaining bytestring of the last file we read
     -- in and a list of the files that remain to be read in.
-    stateRef    <-  newIORef (B.empty ,[filepath])
-    fromFilePath' stateRef 
+    stateRef    <-  newMVar (B.empty ,[filepath])
+    return $ fromFilePath' stateRef 
     where
         fromFilePath' stateRef = do
             -- | Find out where we left off
-            (bytes, filePaths)  <- readIORef stateRef
-            if bytes /= B.empty
+            (bytes, filePaths)  <- takeMVar stateRef
+            if not $ B.null bytes
                 then do
                     -- | Write the updated state
-                    writeIORef stateRef (B.drop byteWindow bytes, filePaths)
+                    putMVar stateRef (B.drop byteWindow bytes, filePaths)
                     return $ Just $ B.take byteWindow bytes
                 else
                     -- | Check if there are remaining files to read in, if there
@@ -145,23 +146,23 @@ fromFilePath byteWindow filepath = do
                         -- | If the next filepath is a file, read it in and
                         -- recurse with the contents of the file
                         isFile                          <-  doesFileExist nextFile 
-                        putStrLn $ "checking out next file: "++nextFile
                         if isFile
                             then do
-                                putStrLn "Definitley a file..."
+                                --putStrLn $ "Reading file " ++ nextFile
                                 contents    <- B.readFile nextFile
-                                writeIORef stateRef (contents, remainingPaths)
+                                putMVar stateRef (contents, remainingPaths)
                                 fromFilePath' stateRef
                             -- | If it is not a file it's a directory. So we
                             -- read it's contents, split it's contents into
                             -- files and directories. Filter the files by
                             -- extension and recurse with the new paths
                             else do
-                                putStrLn "Not a file lol..."
-                                dirContents         <-  getDirectoryContents nextFile
+                                --putStrLn $ "Descending into " ++ nextFile
+                                dirContents         <-  mapM (return .(nextFile </>)) =<< getDirectoryContents nextFile
                                 (files,dirs)        <-  partitionM doesFileExist dirContents
                                 let executables     =   filter isExe files
-                                writeIORef stateRef (B.empty, executables++dirs++remainingPaths)
+                                let realDirs        =   filter (((&&) <$> (/=".") <*> (/="..")) . takeFileName) dirs
+                                putMVar stateRef (B.empty, executables ++ realDirs ++ remainingPaths)
                                 fromFilePath' stateRef
 
         -- | Does a file path end in '.exe' or ',dll' (case insensitive).
@@ -178,7 +179,6 @@ fromFilePath byteWindow filepath = do
             isTrue          <-  predicate x 
             if isTrue   then return $! (x:trues, falses)
                         else return $! (trues, x:falses)
-
             
 
 hdisConfig = intel32 {cfgSyntax = SyntaxNone}

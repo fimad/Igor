@@ -17,13 +17,12 @@ main = do
                                 >>= return . (fromDistribution 16)
                                 >>= doDiscover file
 
-        [file,"scan",path]      ->  return . (fromFilePath 16 path)
-                                >>= doDiscover file
+        [file,"scan",path]      ->  doDiscover file =<< fromFilePath 16 path
 
         _                       ->
             putStrLn $ concat $ [
                     "Usage: ", progName, " gadgetLibraryFile uniform\n"
-                ,   "       ", progName, " gadgetLibraryFile dist distributionFile"
+                ,   "       ", progName, " gadgetLibraryFile dist distributionFile\n"
                 ,   "       ", progName, " gadgetLibraryFile scan path/to/scan"
                 ]
 

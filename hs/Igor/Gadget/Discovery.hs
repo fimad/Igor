@@ -81,7 +81,6 @@ saveLibrary file library = B.writeFile file . B.concat . LB.toChunks . encode $!
 loadLibrary :: String -> IO GadgetLibrary
 loadLibrary file = do
     library <- return . decode . LB.fromChunks . return =<< B.readFile file
-    library `deepseq` performGC
     return $!! library
 
 emptyLibrary :: GadgetLibrary

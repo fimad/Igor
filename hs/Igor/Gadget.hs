@@ -177,6 +177,7 @@ match state = do
         isIllegalExpression (X.InitialValue (X.RegisterLocation _)) = False
         isIllegalExpression (X.Constant _)                          = False
         isIllegalExpression (X.Clobbered)                           = False
+        isIllegalExpression (X.InitialValue _)                      = True
         isIllegalExpression (X.Plus a b)                            = isIllegalExpression a || isIllegalExpression b
         isIllegalExpression (X.Minus a b)                           = isIllegalExpression a || isIllegalExpression b
         isIllegalExpression (X.Xor a b)                             = isIllegalExpression a || isIllegalExpression b

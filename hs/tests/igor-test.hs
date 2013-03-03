@@ -18,8 +18,10 @@ main = do
             putStrLn "Loading library..."
             library <- loadLibrary libraryFile
             putStrLn "Generating code..."
-            --result  <- compile library output [("insertSort", insertSort)]
-            result  <- compile library output [("factorial", factorial), ("insertSort", insertSort)]
+            --result  <- compile library output [("xorEnc", xorEnc)]
+            result  <- compile library output [("insertSort", insertSort)]
+            --result  <- compile library output [("factorial", factorial)]
+            --result  <- compile library output [("factorial", factorial), ("insertSort", insertSort)]
             case result of
                 False   -> putStrLn "Could not generate :("
                 _       -> putStrLn $ "Written to "++output
@@ -40,35 +42,41 @@ main = do
             putStr "\t:\t"
             putStrLn $ mdAssembly m
 
-factorial :: Program
-factorial = do
-    [n]                     <- makeInputs 1
-    [tmp, total]            <- makeLocals 2
-    [begin]                 <- makeLabels 1
-
-    move    total   tmp
-
-    move    total   (1 :: Integer)
-    move    tmp     n
-
-    label   begin
-    mul     total   total   tmp
-    sub     tmp     tmp     (1 :: Integer)
-    jump    begin   ((1 :: Integer) -<- tmp)
-
-    ret     total
-
 insertSort :: Program
 insertSort = do
     [array, length] <- makeInputs 2
-    [currentIndex, tmpIndex, tmp] <- makeLocals 3
+    [arrayEnd, currentIndex, tmpIndex, tmp, tmp2, arrayFront] <- makeLocals 6
     [outer_loop, inner_loop] <- makeLabels 2
 
-    move    tmp         (0 :: Integer)
-    add     tmp         tmp   (R,array,0)
-    add     tmp         tmp   (R,array,4)
-    move    (W,array,8) tmp
+--    move    tmp         (0 :: Integer)
+--    add     tmp         tmp   (R,array,0)
+--    add     tmp         tmp   (R,array,4)
+--    move    (W,array,8) tmp
 
+    move    currentIndex        array
+    mul     arrayEnd            length              (4 :: Integer)
+    add     arrayEnd            arrayEnd            array
+    sub     arrayFront          array               (4 :: Integer)
+
+    label   outer_loop
+    move    tmpIndex            currentIndex
+
+    label   inner_loop
+--    move    tmp                 (R,tmpIndex,0)
+--    move    (W,tmpIndex,0)      (R,tmpIndex,-4)
+    move    (W,tmpIndex,-4)     tmp
+    sub     tmpIndex            tmpIndex            (4 :: Integer)
+--    jump    inner_loop          (tmpIndex -!=- arrayFront)
+
+    add     currentIndex        currentIndex        (4 :: Integer)
+    jump    outer_loop          (currentIndex -!=- arrayEnd)
+
+
+    --
+    --
+    --
+    --
+    --
 --    move    currentIndex                (0 :: Integer)
 --
 --    label   outer_loop
@@ -76,11 +84,11 @@ insertSort = do
 --
 --    label   inner_loop
 --    move    tmp                         (R,array,tmpIndex,4,0)
-----    move    (R,array,tmpIndex,4,0)        (R,array,currentIndex,4,0)       
-----    move    (R,array,currentIndex,4,0)    tmp
+----    move    (W,array,tmpIndex,4,0)      (R,array,currentIndex,4,0)       
+--    move    (W,array,currentIndex,4,0)  tmp
 --    sub     tmpIndex                    tmpIndex            (1 :: Integer)
 --    jump    inner_loop                  always
 --
 --    add     currentIndex                currentIndex        (1 :: Integer)
 --    jump    outer_loop                  (currentIndex -<- length)
-
+--

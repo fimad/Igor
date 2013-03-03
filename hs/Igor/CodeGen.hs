@@ -27,6 +27,7 @@ module Igor.CodeGen
 --, asSavedRegister
 , saveAsRegister
 , claimRegister
+, claimRegisterIfNot
 , withTempRegister
 , withTempRegister'
 , reserveRegisterFor

@@ -175,9 +175,9 @@ match state = do
         -- not done, it would be possible for a junk expression read from an out
         -- of bounds memory location causing a segfault. Certainly undesirable.
         isIllegalExpression (X.InitialValue (X.RegisterLocation _)) = False
+        isIllegalExpression (X.InitialValue _)                      = True
         isIllegalExpression (X.Constant _)                          = False
         isIllegalExpression (X.Clobbered)                           = False
-        isIllegalExpression (X.InitialValue _)                      = True
         isIllegalExpression (X.Plus a b)                            = isIllegalExpression a || isIllegalExpression b
         isIllegalExpression (X.Minus a b)                           = isIllegalExpression a || isIllegalExpression b
         isIllegalExpression (X.Xor a b)                             = isIllegalExpression a || isIllegalExpression b

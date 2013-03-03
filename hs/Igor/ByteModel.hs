@@ -13,6 +13,7 @@ module Igor.ByteModel
 , hdisConfig
 , uniform
 , fromDistribution
+, fromFilePath
 , generate
 ) where
 
@@ -22,7 +23,10 @@ import              Control.Monad
 import              Codec.Compression.GZip
 import qualified    Data.ByteString                     as B
 import              Data.Binary
+import              Data.Char
 import qualified    Data.Foldable                       as F
+import              Data.IORef
+import              Data.List
 import qualified    Data.Map                            as M
 import qualified    Data.IntervalMap.Interval           as IV
 import qualified    Data.IntervalMap.Strict             as IM
@@ -38,6 +42,8 @@ import              Hdis86
 import              Hdis86.Incremental
 import              Hdis86.Types
 import              System.Random
+import              System.Directory
+import              System.FilePath
 
 --------------------------------------------------------------------------------
 -- Data types
@@ -45,10 +51,10 @@ import              System.Random
 
 -- | A model randomly generates a finite list of bytes according to a given byte
 -- distribution.
-type Source     = IO B.ByteString
+type Source     = IO (Maybe B.ByteString)
 
 -- | A generator will generate a list of instruction 'Metadata'.
-type Generator = IO [Metadata]
+type Generator = IO (Maybe [Metadata])
 
 -- | A distribution from a sample
 data SampledDistribution a = SampledDistribution {
@@ -95,21 +101,87 @@ instance (Binary a, Ord a) => Binary (SampledDistribution a) where
 --------------------------------------------------------------------------------
 
 -- | Generates a random list of bytes from the uniform distribution.
--- TODO: Implement an actual model...
 uniform :: Int -> Source
 uniform numBytes = do
     let model       = U.stdUniform
     gen             <- newStdGen
     let !(result,_)  = sampleState (sequence $ replicate numBytes model) gen
-    return $! B.pack (result :: [Word8])
+    return $! Just $ B.pack (result :: [Word8])
 
+-- | Samples bytes from an observed byte frequency. Currently this is pretty
+-- slow, at least compared to the uniform sampling.
 fromDistribution :: Int -> ByteDistribution -> Source 
 fromDistribution numBytes byteDist = do
     gen             <- newStdGen
     let !(result,_)  = sampleState (sequence $ replicate numBytes $ rvar byteDist) gen
-    return $! B.pack (result :: [Word8])
+    return $! Just $ B.pack (result :: [Word8])
 
-hdisConfig = intel32 {cfgSyntax = SyntaxIntel}
+-- | Implements the original authors original gadget discovery method.
+fromFilePath :: Int -> FilePath -> Source
+fromFilePath byteWindow filepath = do
+    -- | This will allow us to keep state between calls to this Source. The
+    -- state in this case is the remaining bytestring of the last file we read
+    -- in and a list of the files that remain to be read in.
+    stateRef    <-  newIORef (B.empty ,[filepath])
+    fromFilePath' stateRef 
+    where
+        fromFilePath' stateRef = do
+            -- | Find out where we left off
+            (bytes, filePaths)  <- readIORef stateRef
+            if bytes /= B.empty
+                then do
+                    -- | Write the updated state
+                    writeIORef stateRef (B.drop byteWindow bytes, filePaths)
+                    return $ Just $ B.take byteWindow bytes
+                else
+                    -- | Check if there are remaining files to read in, if there
+                    -- aren't return that we have reached the limit of this
+                    -- source.
+                    if null filePaths
+                    then return Nothing
+                    -- | Read in the next file and try the method again.
+                    else do
+                        let (nextFile:remainingPaths)   =   filePaths
+                        -- | If the next filepath is a file, read it in and
+                        -- recurse with the contents of the file
+                        isFile                          <-  doesFileExist nextFile 
+                        putStrLn $ "checking out next file: "++nextFile
+                        if isFile
+                            then do
+                                putStrLn "Definitley a file..."
+                                contents    <- B.readFile nextFile
+                                writeIORef stateRef (contents, remainingPaths)
+                                fromFilePath' stateRef
+                            -- | If it is not a file it's a directory. So we
+                            -- read it's contents, split it's contents into
+                            -- files and directories. Filter the files by
+                            -- extension and recurse with the new paths
+                            else do
+                                putStrLn "Not a file lol..."
+                                dirContents         <-  getDirectoryContents nextFile
+                                (files,dirs)        <-  partitionM doesFileExist dirContents
+                                let executables     =   filter isExe files
+                                writeIORef stateRef (B.empty, executables++dirs++remainingPaths)
+                                fromFilePath' stateRef
+
+        -- | Does a file path end in '.exe' or ',dll' (case insensitive).
+        isExe :: FilePath -> Bool
+        isExe   = ((||) <$> (".exe"==) <*> (".dll"==))
+                . map toLower
+                . snd
+                . splitExtension
+
+        -- | There should really be a partitionM in Control.Monad...
+        partitionM predicate []     = return ([],[])
+        partitionM predicate (x:xs) = do
+            (trues,falses)  <-  partitionM predicate xs
+            isTrue          <-  predicate x 
+            if isTrue   then return $! (x:trues, falses)
+                        else return $! (trues, x:falses)
+
+            
+
+hdisConfig = intel32 {cfgSyntax = SyntaxNone}
 
 --------------------------------------------------------------------------------
 -- The assembly generator
@@ -127,10 +199,13 @@ disassembleMetadata' config bytestring = reverse $! disas bytestring []
 generate :: Source -> Generator
 generate !model = do
     !words       <- model
-    -- attempt to disassemble them
-    let !result  = disassembleMetadata hdisConfig $ words 
-    -- if successful return the instruction list, otherwise try again
-    case result of
-        []        -> generate model
-        otherwise -> return $! result
+    case words of
+        Just words  -> do
+            -- attempt to disassemble them
+            let !result  = disassembleMetadata hdisConfig $ words 
+            -- if successful return the instruction list, otherwise try again
+            case result of
+                []        -> generate model
+                otherwise -> return $! Just result
+        Nothing     -> return Nothing
 

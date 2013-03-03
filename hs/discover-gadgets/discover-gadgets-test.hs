@@ -11,7 +11,7 @@ import              System.Random
 main :: IO ()
 main = do
     let generator   = generate $ uniform 16
-    library         <- discover 10000 generator
+    library         <- discover (IncreaseSizeBy 10000) generator
     sequence_ $ map prettyPrint $ M.toList $ gadgetMap library
 
     where
@@ -25,7 +25,7 @@ main = do
             putStrLn $ "\t" ++ replicate 40 '-' ++ "\n"
             
         printBS bs  = do
-            let metaList    =  disassembleMetadata hdisConfig bs
+            let metaList    =  disassembleMetadata (hdisConfig {cfgSyntax = SyntaxIntel}) bs
             sequence_ $ map printMeta metaList
 
         printMeta m = do

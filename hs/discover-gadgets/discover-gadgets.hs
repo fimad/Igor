@@ -17,10 +17,14 @@ main = do
                                 >>= return . (fromDistribution 16)
                                 >>= doDiscover file
 
+        [file,"scan",path]      ->  return . (fromFilePath 16 path)
+                                >>= doDiscover file
+
         _                       ->
             putStrLn $ concat $ [
                     "Usage: ", progName, " gadgetLibraryFile uniform\n"
                 ,   "       ", progName, " gadgetLibraryFile dist distributionFile"
+                ,   "       ", progName, " gadgetLibraryFile scan path/to/scan"
                 ]
 
 doDiscover :: FilePath -> Source -> IO ()
@@ -34,7 +38,7 @@ doDiscover file source = do
                             else
                                 return emptyLibrary
     putStrLn "Looking for gadgets..."
-    newLibrary      <- discoverMore 10000 generator existingLibrary
+    newLibrary      <- discoverMore (IncreaseSizeBy 10000) generator existingLibrary
     putStrLn "Working..."
     saveLibrary file newLibrary
     putStrLn "Done!"

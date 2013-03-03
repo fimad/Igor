@@ -5,6 +5,7 @@ module Igor.Gadget.Discovery
 ( 
 -- * Types
   GadgetLibrary(..)
+, StopCondition (..)
 -- * Methods
 , emptyLibrary
 , libraryLookup
@@ -42,6 +43,10 @@ import              Hdis86.Pure
 import              Hdis86.Types
 import              System.Mem
 import              System.Random
+
+data StopCondition  =   IncreaseSizeBy  Int
+                    |   TotalSizeIs     Int
+                    |   UntilFailure
 
 -- | A collection of sequences of bytecodes that correspond to specific gadgets.
 newtype GadgetLibrary = GadgetLibrary {
@@ -110,25 +115,32 @@ libraryInsert !gadget !(value,clobber) !library = GadgetLibrary
 
 -- | Given a target size and an instruction 'Metadata' 'Generator', builds a
 -- library of gadgets of that is at least as large as the target size.
-discover :: Int -> Generator -> IO GadgetLibrary
-discover targetSize generator = discoverMore targetSize generator emptyLibrary
+discover :: StopCondition -> Generator -> IO GadgetLibrary
+discover stop generator = discoverMore stop generator emptyLibrary
 
-discoverMore :: Int -> Generator -> GadgetLibrary -> IO GadgetLibrary
-discoverMore targetIncrease !generator library =  discover' library
+-- | Handles the stop condition
+discoverMore :: StopCondition -> Generator -> GadgetLibrary -> IO GadgetLibrary
+discoverMore stop@UntilFailure                  !generator !library = discoverMore' stop generator library
+discoverMore stop@(TotalSizeIs targetSize)      !generator !library
+    | M.size (gadgetMap library) >= targetSize                      = return library
+    | otherwise                                                     = discoverMore' stop generator library
+discoverMore (IncreaseSizeBy targetIncrease)    !generator !library = discoverMore' stop generator library
     where
-        targetSize = M.size (gadgetMap library) + targetIncrease
+        originalSize    = M.size (gadgetMap library) 
+        stop            = TotalSizeIs $ originalSize + targetIncrease
+                
+-- | Performs one iteration of the discovery
+discoverMore' stop generator library = do
+    --stream          <- generator >>= return . subsequences
+    !stream         <- generator
+    case stream of
+        Nothing     -> return library
+        Just stream -> do
+            let streams     = inits stream
+            let newLibrary  = foldr' (uncurry libraryInsert) library $!! concatMap process streams
+            newLibrary `seq` discoverMore stop generator newLibrary
 
-        discover' :: GadgetLibrary -> IO GadgetLibrary
-        discover' !library =
-            if M.size (gadgetMap library) >= targetSize
-                then do
-                    return library
-                else do
-                    !stream          <- generator >>= return . inits
-                    --stream          <- generator >>= return . subsequences
-                    let newLibrary  = foldr' (uncurry libraryInsert) library $!! concatMap process stream
-                    newLibrary `seq` discover' newLibrary
-
+    where
         -- Turn an instruction stream into a list of key value pairs for the
         -- gadget library
         process :: [Metadata] -> [(G.Gadget,(B.ByteString,G.ClobberList))]

@@ -157,7 +157,7 @@ fromFilePath byteWindow filepath = do
                             -- files and directories. Filter the files by
                             -- extension and recurse with the new paths
                             else do
-                                putStrLn $ "Descending into " ++ nextFile
+                                --putStrLn $ "Descending into " ++ nextFile
                                 dirContents         <-  mapM (return .(nextFile </>)) =<< getDirectoryContents nextFile
                                 (files,dirs)        <-  partitionM doesFileExist dirContents
                                 let executables     =   filter isExe files

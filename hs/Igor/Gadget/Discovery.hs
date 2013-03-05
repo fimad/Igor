@@ -64,29 +64,29 @@ instance Binary GadgetLibrary where
                             -- $   S.unions 
                             $   map (S.map fst) 
                             $   M.elems gadgetMap
-        let metadataToInt   = metadataSet `deepseq` M.fromList $ zip metadataSet [1::Int ..] 
-        let intToBytes      = metadataToInt `deepseq` IM.fromList $ map swap $ M.assocs metadataToInt
-        let libraryWithInts = intToBytes `deepseq` M.map (S.map (\(m,c) -> (metadataToInt M.! m,c))) gadgetMap
-        put $!! intToBytes
-        put $!! libraryWithInts
+        let metadataToInt   = M.fromList $ zip metadataSet [1::Int ..] 
+        let intToBytes      = IM.fromList $ map swap $ M.assocs metadataToInt
+        let libraryWithInts = M.map (S.map (\(m,c) -> (metadataToInt M.! m,c))) gadgetMap
+        put $! intToBytes
+        put $! libraryWithInts
 
     get = do
-        !intToBytes          <- get :: Get (IM.IntMap B.ByteString)
-        !libraryWithInts     <- intToBytes `deepseq` get
-        let library         = libraryWithInts `deepseq` M.map (S.map (\(m,c) -> (intToBytes IM.! m,c))) libraryWithInts
-        return $ GadgetLibrary $!! library :: Get GadgetLibrary
+        intToBytes          <- get :: Get (IM.IntMap B.ByteString)
+        libraryWithInts     <- get
+        let library         =  M.map (S.map (\(m,c) -> (intToBytes IM.! m,c))) libraryWithInts
+        return $ GadgetLibrary $ library :: Get GadgetLibrary
 
 --------------------------------------------------------------------------------
 -- GadgetLibrary operations
 --------------------------------------------------------------------------------
 
 saveLibrary :: String -> GadgetLibrary -> IO ()
-saveLibrary file library = B.writeFile file . B.concat . LB.toChunks . encode $!! library
+saveLibrary file library = LB.writeFile file . encode $!! library
 
 loadLibrary :: String -> IO GadgetLibrary
 loadLibrary file = do
-    library <- return . decode . LB.fromChunks . return =<< B.readFile file
-    return $!! library
+    library <- return . decode =<< LB.readFile file
+    return $ library
 
 emptyLibrary :: GadgetLibrary
 emptyLibrary = GadgetLibrary {

@@ -321,8 +321,8 @@ claimRegisterIfNot thisRegister otherRegisters method = do
 withTempRegister :: [X.Register] -> (X.Register -> Partial b) -> Partial b
 withTempRegister nonFreeRegs method = do
     state@CodeGenState{..}  <- get
-    tempReg                 <- lift $ nonFreeRegs ++ S.toList locationPool
-    --tempReg                 <- lift =<< (++) <$> return nonFreeRegs <*> randomLocationPool
+    --tempReg                 <- lift $ nonFreeRegs ++ S.toList locationPool
+    tempReg                 <- lift =<< (++) <$> return nonFreeRegs <*> randomLocationPool
     reserveRegisterFor tempReg $ method tempReg
 
 -- | Same as 'withTempRegister' except that the first argument has been
@@ -437,6 +437,7 @@ asRegister paramable method =
                             -- Actually perform the constant load and the shift
                             compileGadget $ constantGadget
                             compileGadget $ G.LoadReg tempShiftReg constantLoc
+                            compileGadget $ G.LoadReg shiftLoc tempShiftReg
                             compileGadget $ shiftGadget
                             -- Move the constant into a temporary register
                             compileGadget $ G.LoadReg valueReg shiftLoc

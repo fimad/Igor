@@ -37,7 +37,8 @@ doDiscover file (IncreaseSizeBy x) source   =   mapM_ (doDiscover' file source .
                                             -- Construct a list whose sum is x
                                             -- but each element is no bigger
                                             -- than sizeIncrements
-                                            $   ((x `mod` sizeIncrements) :)
+                                            $   filter (0/=)
+                                            $   ((x `mod` sizeIncrements):)
                                             $   take (x `div` sizeIncrements)
                                             $   repeat sizeIncrements
 doDiscover file (TotalSizeIs x) source      =   mapM_ (doDiscover' file source . TotalSizeIs)

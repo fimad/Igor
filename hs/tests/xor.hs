@@ -1,4 +1,4 @@
-import Igor.DSL
+import Igor
 
 main = defineMethod "xorEnc" $ do
     [array, length, key] <- makeInputs 3

@@ -43,6 +43,7 @@ import              Hdis86.Pure
 import              Hdis86.Types
 import              System.Mem
 import              System.Random
+import              System.IO
 
 data StopCondition  =   IncreaseSizeBy  Int
                     |   TotalSizeIs     Int
@@ -81,7 +82,7 @@ instance Binary GadgetLibrary where
 --------------------------------------------------------------------------------
 
 saveLibrary :: String -> GadgetLibrary -> IO ()
-saveLibrary file library = LB.writeFile file . encode $!! library
+saveLibrary file library = withFile file WriteMode $ \handle -> LB.hPut handle $ encode $ library
 
 loadLibrary :: String -> IO GadgetLibrary
 loadLibrary file = do

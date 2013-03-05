@@ -1,4 +1,4 @@
-import Igor.DSL
+import Igor
 
 main = defineMethod "factorial" $ do
     [n]                     <- makeInputs 1

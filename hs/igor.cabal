@@ -22,7 +22,6 @@ Library
         Igor.CodeGen
         Igor.CodeGen.GCC
         Igor.Derive
-        Igor.DSL
         Igor.Expr
         Igor.Eval
         Igor.Gadget

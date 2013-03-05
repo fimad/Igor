@@ -159,7 +159,7 @@ defines _                       = []
 -- that correspond to the given execution state.
 match :: State -> [Match]
 match state = do
-    (location,expression)   <- (M.assocs state)
+    (location,expression:oldExpressions)   <- (M.assocs state)
     (gadget,nonClobbered)   <- matchGadgets location expression
     let allOtherExpressions = location `M.delete` state
     --let allOtherExpressions = foldl (flip M.delete) state nonClobbered
@@ -167,7 +167,7 @@ match state = do
     let clobbered           = M.keys $ foldl (flip M.delete) state nonClobbered
     -- Ensure that we don't perform any bad reads or clobber any variable memory
     -- location
-    guard $ all (not.  isIllegalExpression) $ M.elems allOtherExpressions
+    guard $ all (not.  isIllegalExpression) $ join $ oldExpressions : M.elems allOtherExpressions
     guard $ all (not.  isIllegalExpression) $ map (X.InitialValue) clobbered
     return (gadget, clobbered)
     where
@@ -178,6 +178,7 @@ match state = do
         isIllegalExpression (X.InitialValue _)                      = True
         isIllegalExpression (X.Constant _)                          = False
         isIllegalExpression (X.Clobbered)                           = False
+        isIllegalExpression (X.ClobberedReading a)                  = isIllegalExpression a
         isIllegalExpression (X.Plus a b)                            = isIllegalExpression a || isIllegalExpression b
         isIllegalExpression (X.Minus a b)                           = isIllegalExpression a || isIllegalExpression b
         isIllegalExpression (X.Xor a b)                             = isIllegalExpression a || isIllegalExpression b
@@ -185,7 +186,7 @@ match state = do
         isIllegalExpression (X.RightShift a b)                      = isIllegalExpression a || isIllegalExpression b
         isIllegalExpression (X.Comparison a b)                      = isIllegalExpression a || isIllegalExpression b
         isIllegalExpression (X.Conditional _ a)                     = isIllegalExpression a
-        isIllegalExpression _                                       = True
+        --isIllegalExpression _                                       = True
 
 -- | Create a list of all of the
 matchGadgets :: X.Location -- ^ The source of the current expression

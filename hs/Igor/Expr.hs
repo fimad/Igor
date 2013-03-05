@@ -87,6 +87,10 @@ data Expression = InitialValue Location
                 | Comparison Expression Expression 
                 -- | Corresponds to some value we don't care about
                 | Clobbered 
+                -- | Corresponds to some value we don't care about that might
+                -- have evaluated the given expression. Useful for catching
+                -- random memory reads, which in turn lead to segfaults, yuck...
+                | ClobberedReading Expression
                 -- | If some condition is true, then the expression happens. This
                 -- is only really useful for conditional jumps. If you tried to
                 -- use it to log effects after conditional jumps then you would

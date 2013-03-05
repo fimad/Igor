@@ -26,7 +26,11 @@ import              Igor.Expr
 -- track if any "variable location" writes have taken place, that is writes
 -- where the destination depends on the initial value of another location. There
 -- are special things to take into consideration after such things occur.
-type State = M.Map Location Expression
+--
+-- | Because we need to prevent random memory reads we need to keep track of
+-- every value that a location has taken on. The head of the list represents the
+-- final value, with older values as you move through the list.
+type State = M.Map Location [Expression]
 
 --------------------------------------------------------------------------------
 -- Methods
@@ -43,8 +47,16 @@ initialState = M.empty
 valueOf :: Maybe Location -> State -> Maybe Expression
 valueOf Nothing _             = Nothing
 valueOf (Just location) state = case M.lookup location state of
-    Just expr -> return expr
+    Just expr -> return $ head expr
     Nothing   -> return $ InitialValue location
+
+
+-- | A wrapper for map insert that handles appending the most recent value to
+-- the list of all values a location has taken on.
+insertValue :: Location -> Expression -> State -> State
+insertValue location expression state = M.insert location (expression:expressions) state
+    where
+        expressions = fromMaybe [] $ M.lookup location state
 
 
 -- | Converts the disassembler's representation of registers to internal
@@ -94,11 +106,11 @@ buildExpr2 state expr operands = do
     dstLocation                         <- operandToLocation dst
     srcValue                            <- operandToExpression src state
     dstValue                            <- operandToExpression dst state
-    return (M.insert dstLocation (expr dstValue srcValue) state, False)
+    return (insertValue dstLocation (expr dstValue srcValue) state, False)
 
 -- | Marks that the flags register has been clobbered
 clobbersFlags :: State -> State
-clobbersFlags state = M.insert (RegisterLocation EFLAG) (Clobbered) state
+clobbersFlags state = insertValue (RegisterLocation EFLAG) (Clobbered) state
 
 -- | Marks the flags register as containing the result of a comparison
 compareExpr :: State -> [H.Operand] -> Maybe State
@@ -107,7 +119,7 @@ compareExpr state operands = do
     src                                             <- listToMaybe $ drop 1 $ operands
     srcValue@(InitialValue (RegisterLocation _))    <- operandToExpression src state
     dstValue@(InitialValue (RegisterLocation _))    <- operandToExpression dst state
-    return $! M.insert (RegisterLocation EFLAG) (Comparison dstValue srcValue) state
+    return $! insertValue (RegisterLocation EFLAG) (Comparison dstValue srcValue) state
 
 buildJump :: State -> Int32 -> (Value -> Expression) -> [H.Operand] -> Maybe (State, Bool)
 buildJump state size expr operands = do
@@ -115,8 +127,27 @@ buildJump state size expr operands = do
     (Constant srcValue) <- operandToExpression src state
     case valueOf (Just $ RegisterLocation EIP) state of
         Just (InitialValue (RegisterLocation EIP))  -> return 
-                                                    $ (M.insert (RegisterLocation EIP) (expr $ srcValue) state, True)
+                                                    $ (insertValue (RegisterLocation EIP) (expr $ srcValue) state, True)
         _                                           -> Nothing
+
+-- | A function that marks the first operand of an opcode as clobbered and marks
+-- that it reads from the second operand
+clobbersFirstAndReads :: State -> Int32 -> H.Instruction -> Maybe (State,Bool)
+clobbersFirstAndReads state size instruction =  do
+    dst         <- listToMaybe $ H.inOperands instruction
+    src         <- listToMaybe $ drop 1 $ H.inOperands instruction
+    dstLocation <- operandToLocation dst
+    srcValue    <- operandToExpression src state
+    return $ (insertValue dstLocation (ClobberedReading srcValue) $ clobbersFlags state, False)
+
+-- | A function that marks the first operand of an opcode as clobbered and
+-- either doesn't have other operands or will definitely perform a memory access
+-- on them.
+clobbersFirst :: State -> Int32 -> H.Instruction -> Maybe (State,Bool)
+clobbersFirst state size instruction =  do
+    dst         <- listToMaybe $ H.inOperands instruction
+    dstLocation <- operandToLocation dst
+    return $ (insertValue dstLocation Clobbered $ clobbersFlags state, False)
 
 --------------------------------------------------------------------------------
 -- The many cases of eval....
@@ -144,7 +175,7 @@ eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Imov})     
     src         <- listToMaybe $ drop 1 $ H.inOperands instruction
     dstLocation <- operandToLocation dst
     srcValue    <- operandToExpression src state
-    return $ (M.insert dstLocation srcValue state, False)
+    return $ (insertValue dstLocation srcValue state, False)
 
 --------------------------------------------------------------------------------
 -- Arithmetic
@@ -156,7 +187,7 @@ eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Iinc})     
     dstLocation                         <- operandToLocation dst
     dstExpr                             <- operandToExpression dst state'
     let dstValue                        =  Plus (Constant 1) dstExpr
-    return $ (M.insert dstLocation dstValue state', False)
+    return $ (insertValue dstLocation dstValue state', False)
 
 eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Iimul})     = do
     let state'  = clobbersFlags state
@@ -169,7 +200,7 @@ eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Iimul})    
     dstExpr                             <- valueOf (Just dstLocation) state'
     srcExpr                             <- operandToExpression src state'
     let dstValue                        =  Times dstExpr srcExpr
-    return $ (M.insert clobberedLocation Clobbered $ M.insert dstLocation dstValue state', False)
+    return $ (insertValue clobberedLocation Clobbered $ insertValue dstLocation dstValue state', False)
 
 eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ixor})     = do
     let state'  = clobbersFlags state
@@ -197,8 +228,8 @@ eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ipush})    
     srcValue    <- operandToExpression src state
     case valueOf (Just $ RegisterLocation ESP) state of
         Just (InitialValue (RegisterLocation ESP))  -> return (
-                                                          M.insert (MemoryLocation $ OffsetAddress ESP (-4)) srcValue
-                                                        $ M.insert (RegisterLocation ESP)
+                                                          insertValue (MemoryLocation $ OffsetAddress ESP (-4)) srcValue
+                                                        $ insertValue (RegisterLocation ESP)
                                                             (Minus (InitialValue (RegisterLocation ESP)) (Constant 4))
                                                           state
                                                         , False)
@@ -209,8 +240,8 @@ eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ipop})     
     srcLocation <- operandToLocation src
     case valueOf (Just $ RegisterLocation ESP) state of
         Just (InitialValue (RegisterLocation ESP))  -> return (
-                                                          M.insert srcLocation (InitialValue $ MemoryLocation $ OffsetAddress ESP 0)
-                                                        $ M.insert (RegisterLocation ESP)
+                                                          insertValue srcLocation (InitialValue $ MemoryLocation $ OffsetAddress ESP 0)
+                                                        $ insertValue (RegisterLocation ESP)
                                                             (Plus (InitialValue (RegisterLocation ESP)) (Constant 4))
                                                           state
                                                         , False)
@@ -248,6 +279,25 @@ eval' state size instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ijl})  =
 --------------------------------------------------------------------------------
 -- Instructions we just can't deal with
 --------------------------------------------------------------------------------
+
+eval' state size instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ilea})  = clobbersFirst state size instruction
+eval' state size instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Idec})  = clobbersFirst state size instruction
+eval' state size instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ineg})  = clobbersFirst state size instruction
+eval' state size instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Inot})  = clobbersFirst state size instruction
+eval' state size instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ircl})  = clobbersFirst state size instruction
+eval' state size instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ircr})  = clobbersFirst state size instruction
+eval' state size instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Irol})  = clobbersFirst state size instruction
+eval' state size instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Iror})  = clobbersFirst state size instruction
+eval' state size instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Isal})  = clobbersFirst state size instruction
+eval' state size instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ishl})  = clobbersFirst state size instruction
+eval' state size instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ishr})  = clobbersFirst state size instruction
+
+eval' state size instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Iadc})  = clobbersFirstAndReads state size instruction
+eval' state size instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Isbb})  = clobbersFirstAndReads state size instruction
+eval' state size instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Iand})  = clobbersFirstAndReads state size instruction
+eval' state size instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Ior})   = clobbersFirstAndReads state size instruction
+eval' state size instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Itest}) = clobbersFirstAndReads state size instruction
+
 
 eval' _ _ _                                                                     = Nothing
 

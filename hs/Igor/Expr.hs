@@ -1,4 +1,3 @@
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE BangPatterns #-}
 module Igor.Expr
 ( 
@@ -190,8 +189,3 @@ instance Binary Reason where
     put Equal           = putWord8 5
     put NotEqual        = putWord8 6
 
-$( derive makeNFData ''Reason )
-$( derive makeNFData ''Register )
-$( derive makeNFData ''Address )
-$( derive makeNFData ''Location )
-$( derive makeNFData ''Expression )

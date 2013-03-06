@@ -8,6 +8,7 @@ module Igor.ByteModel
   Generator
 , Source
 , SampledDistribution (..)
+, emptySample
 , ByteDistribution (..)
 -- * Methods
 , hdisConfig
@@ -67,11 +68,18 @@ data SampledDistribution a = SampledDistribution {
     ,   cdfMap      :: IM.IntervalMap Rational a
 }
 
+emptySample :: SampledDistribution a
+emptySample = SampledDistribution {
+        frequencies = M.empty
+    ,   total       = 0
+    ,   cdfMap      = IM.empty
+}
+
 type ByteDistribution = SampledDistribution Word8
 
 instance Distribution SampledDistribution a where
     rvarT dist    = do
-        sample <- liftM toRational $ getRandomDouble
+        sample <- liftM toRational getRandomDouble
         return  $ snd
                 $ head
                 $ IM.containing (cdfMap dist) sample
@@ -91,7 +99,7 @@ instance (Binary a, Ord a) => Binary (SampledDistribution a) where
                             ) 
                             (IM.ClosedInterval 0 0,undefined)
                     $ M.assocs frequencies
-        return $ SampledDistribution {
+        return SampledDistribution {
                 frequencies = frequencies
             ,   total       = total
             ,   cdfMap      = cdfMap
@@ -106,7 +114,7 @@ uniform :: Int -> Source
 uniform numBytes = do
     let model       = U.stdUniform
     gen             <- newStdGen
-    let !(result,_)  = sampleState (sequence $ replicate numBytes model) gen
+    let !(result,_)  = sampleState (replicateM numBytes model) gen
     return $! Just $ B.pack (result :: [Word8])
 
 -- | Samples bytes from an observed byte frequency. Currently this is pretty
@@ -114,7 +122,7 @@ uniform numBytes = do
 fromDistribution :: Int -> ByteDistribution -> Source 
 fromDistribution numBytes byteDist = do
     gen             <- newStdGen
-    let !(result,_)  = sampleState (sequence $ replicate numBytes $ rvar byteDist) gen
+    let !(result,_)  = sampleState (replicateM numBytes $ rvar byteDist) gen
     return $! Just $ B.pack (result :: [Word8])
 
 -- | Implements the original authors original gadget discovery method.
@@ -139,7 +147,11 @@ fromFilePath byteWindow filepath = do
                     -- aren't return that we have reached the limit of this
                     -- source.
                     if null filePaths
-                    then return Nothing
+                    then do
+                        -- we still need to put something back in the MVar
+                        -- otherwise we will crash and burn upon completion
+                        putMVar stateRef (B.empty, [])
+                        return Nothing
                     -- | Read in the next file and try the method again.
                     else do
                         let (nextFile:remainingPaths)   =   filePaths
@@ -177,8 +189,9 @@ fromFilePath byteWindow filepath = do
         partitionM predicate (x:xs) = do
             (trues,falses)  <-  partitionM predicate xs
             isTrue          <-  predicate x 
-            if isTrue   then return $! (x:trues, falses)
-                        else return $! (trues, x:falses)
+            return $! if isTrue  
+                        then (x:trues, falses)
+                        else (trues, x:falses)
             
 
 hdisConfig = intel32 {cfgSyntax = SyntaxNone}
@@ -192,7 +205,7 @@ disassembleMetadata' config bytestring = reverse $! disas bytestring []
         disas bs !meta = 
             case disassembleOne config bs of
                 Nothing                 -> meta
-                Just (newMeta,newBs)    -> (newMeta,newBs) `seq` disas newBs (newMeta:meta)
+                Just (newMeta,newBs)    -> disas newBs (newMeta:meta)
 
 -- | Generates a random instruction stream based on the model function that is
 -- passed in.
@@ -202,7 +215,7 @@ generate !model = do
     case words of
         Just words  -> do
             -- attempt to disassemble them
-            let !result  = disassembleMetadata hdisConfig $ words 
+            let !result  = disassembleMetadata hdisConfig words 
             -- if successful return the instruction list, otherwise try again
             case result of
                 []        -> generate model

@@ -1,4 +1,3 @@
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE BangPatterns #-}
 module Igor.Gadget
 ( 
@@ -135,8 +134,6 @@ instance Binary Gadget where
                                 putWord8 11
                                 put r
                                 put i
-
-$( derive makeNFData ''Gadget )
 
 type ClobberList = [X.Location]
 -- | A match is an instantiated gadget and a list of clobbered locations.

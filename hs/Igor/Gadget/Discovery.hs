@@ -1,4 +1,4 @@
-{-# LANGUAGE TemplateHaskell #-}
+--{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE BangPatterns #-}
 module Igor.Gadget.Discovery
@@ -54,7 +54,7 @@ newtype GadgetLibrary = GadgetLibrary {
         gadgetMap   :: M.Map G.Gadget (S.Set (B.ByteString, G.ClobberList))
     }
     deriving (Eq,Ord,Show,Read)
-$( derive makeNFData ''GadgetLibrary )
+-- $( derive makeNFData ''GadgetLibrary )
 
 instance Binary GadgetLibrary where
     put library@GadgetLibrary{..} = do
@@ -138,7 +138,7 @@ discoverMore' stop generator library = do
         Nothing     -> return library
         Just stream -> do
             let streams     = inits stream
-            let newLibrary  = foldr' (uncurry libraryInsert) library $!! concatMap process streams
+            let newLibrary  = foldr' (uncurry libraryInsert) library $! concatMap process streams
             newLibrary `seq` discoverMore stop generator newLibrary
 
     where

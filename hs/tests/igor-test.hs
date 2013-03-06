@@ -62,11 +62,11 @@ insertSort = do
     move    tmpIndex            currentIndex
 
     label   inner_loop
---    move    tmp                 (R,tmpIndex,0)
---    move    (W,tmpIndex,0)      (R,tmpIndex,-4)
+    move    tmp                 (R,tmpIndex,0)
+    move    (W,tmpIndex,0)      (R,tmpIndex,-4)
     move    (W,tmpIndex,-4)     tmp
     sub     tmpIndex            tmpIndex            (4 :: Integer)
---    jump    inner_loop          (tmpIndex -!=- arrayFront)
+    jump    inner_loop          (tmpIndex -!=- arrayFront)
 
     add     currentIndex        currentIndex        (4 :: Integer)
     jump    outer_loop          (currentIndex -!=- arrayEnd)

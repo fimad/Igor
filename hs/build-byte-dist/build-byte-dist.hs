@@ -4,7 +4,8 @@ import              Control.Monad.IO.Class
 import              Control.Monad.Trans.Class
 import              Data.Binary
 import qualified    Data.ByteString             as B
-import              Data.Enumerator             hiding (map)
+import              Data.Enumerator             hiding (map, head)
+import qualified    Data.Enumerator.List        as EL
 import qualified    Data.Foldable               as F
 import qualified    Data.Map                    as M
 import              Data.Ratio
@@ -23,7 +24,7 @@ type ByteCount = M.Map Word8 Integer
 
 builder :: ByteCount -> Iteratee OS.FilePath IO ByteCount
 builder !dist = do
-    !maybePath <- Data.Enumerator.head
+    !maybePath <- EL.head
     case maybePath of
         Just path   -> do
             (lift $ process path dist) >>= builder
@@ -50,7 +51,7 @@ main = do
             let enum            = traverse True (fromString path)
             byteCount           <- run_ $ builder initialCounts >>== enum
             let total           = sum $ M.elems byteCount
-            let byteDist        = SampledDistribution { 
+            let byteDist        = emptySample { 
                     frequencies = M.map (% total) byteCount
                 ,   total = total
                 }

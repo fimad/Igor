@@ -596,7 +596,7 @@ buildJump jumpFlavor target = do
     state@CodeGenState{..}  <- get
     currentOffset           <- currentByteOffset
     maybeTargetOffset       <- lift $ maybeToList $ target `M.lookup` labelMap
-    jumpLength              <- lift $ 0:[2..16]
+    jumpLength              <- lift $ [2..16]
     case maybeTargetOffset of
         Just targetOffset   -> do
             -- We can't jump backward with a 0 length jump...

@@ -35,7 +35,6 @@ import              Data.Maybe
 import              Data.Random
 import              Data.Random.RVar
 import              Data.Tuple
-import              Igor.Derive
 import              Igor.ByteModel
 import              Igor.Eval
 import qualified    Igor.Gadget             as G

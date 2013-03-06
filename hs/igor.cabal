@@ -116,3 +116,11 @@ Executable factorial-test
     Build-Depends:
             base                    >= 2.0
         ,   igor
+
+Executable max-test
+    ghc-options: -O2 -threaded
+    Main-Is: max.hs
+    Hs-Source-Dirs: tests
+    Build-Depends:
+            base                    >= 2.0
+        ,   igor

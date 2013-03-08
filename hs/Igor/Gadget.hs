@@ -34,7 +34,7 @@ data Gadget = NoOp
             | Minus X.Register X.Register X.Register
             | RightShift X.Register Integer -- arithmetic shift
             | Compare X.Register X.Register
-            | Jump X.Reason Integer
+            | Jump Integer X.Reason Integer
     deriving (Ord, Eq, Show, Read)
 
 instance Binary Gadget where
@@ -84,9 +84,15 @@ instance Binary Gadget where
                 !r2 <- get
                 return $! Compare r1 r2
             11  ->  do
+                let s  = -1
                 !r  <- get
                 !i  <- get
-                return $! Jump r i
+                return $! Jump s r i
+            12  ->  do
+                !s  <- get
+                !r  <- get
+                !i  <- get
+                return $! Jump s r i
 
     put NoOp                = putWord8 0
     put (LoadReg r1 r2)     = do
@@ -130,8 +136,11 @@ instance Binary Gadget where
                                 putWord8 10
                                 put r1
                                 put r2
-    put (Jump r i)          = do
-                                putWord8 11
+    put (Jump s r i)        
+        |   s == -1     = return ()
+        |   otherwise   = do
+                                putWord8 12
+                                put s
                                 put r
                                 put i
 
@@ -154,10 +163,10 @@ defines _                       = []
 
 -- | Takes a 'State' and returns a set of all of the 'Match'es for the gadgets
 -- that correspond to the given execution state.
-match :: State -> [Match]
-match state = do
+match :: Integer -> State -> [Match]
+match size state = do
     (location,expression:oldExpressions)   <- (M.assocs state)
-    (gadget,nonClobbered)   <- matchGadgets location expression
+    (gadget,nonClobbered)   <- matchGadgets size location expression
     let allOtherExpressions = location `M.delete` state
     --let allOtherExpressions = foldl (flip M.delete) state nonClobbered
     --let clobbered           = M.keys $ allOtherExpressions
@@ -186,10 +195,11 @@ match state = do
         --isIllegalExpression _                                       = True
 
 -- | Create a list of all of the
-matchGadgets :: X.Location -- ^ The source of the current expression
+matchGadgets :: Integer -- ^ The size of the gadget
+             -> X.Location -- ^ The source of the current expression
              -> X.Expression -- ^ The expression to test against
              -> [Match] -- ^ A list of pairs of gadgets and their used locations that match the expression
-matchGadgets source expression = catMaybes $ map ($ expression) gadgetMatchers
+matchGadgets size source expression = catMaybes $ map ($ expression) gadgetMatchers
     where
         gadgetMatchers = map ($ source) [
               matchNoOp
@@ -203,7 +213,7 @@ matchGadgets source expression = catMaybes $ map ($ expression) gadgetMatchers
             , matchMinus
             , matchRightShift
             , matchCompare
-            , matchJump
+            , matchJump size
             ]
 
         --matchNoOp _ _ = Just (NoOp, [])
@@ -284,14 +294,16 @@ matchGadgets source expression = catMaybes $ map ($ expression) gadgetMatchers
                 Nothing
 
         matchJump
+            size
             srcLoc@(X.RegisterLocation X.EIP)
             (X.Constant offset) =
-                Just (Jump X.Always $ fromIntegral offset, [X.RegisterLocation X.EIP])
+                Just (Jump size X.Always $ fromIntegral offset, [X.RegisterLocation X.EIP])
         matchJump
+            size
             srcLoc@(X.RegisterLocation X.EIP)
             (X.Conditional reason (X.Constant offset)) =
-                Just (Jump reason $ fromIntegral offset, [X.RegisterLocation X.EIP])
-        matchJump _ _ =
+                Just (Jump size reason $ fromIntegral offset, [X.RegisterLocation X.EIP])
+        matchJump _ _ _ =
                 Nothing
 
         regEquiv :: X.Register -> X.Register -> Maybe ()

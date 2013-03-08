@@ -99,16 +99,16 @@ libraryLookup :: G.Gadget -> GadgetLibrary -> Maybe (S.Set (B.ByteString, G.Clob
 libraryLookup g@(G.LoadReg a b) library@GadgetLibrary{..}
     | a == b            = return $ S.singleton (B.empty,[])
     | otherwise         = M.lookup g gadgetMap
-libraryLookup g@(G.Jump _ 0) library@GadgetLibrary{..}  = return $ S.singleton (B.empty,[])
-libraryLookup g library@GadgetLibrary{..}               = M.lookup g gadgetMap
+libraryLookup g@(G.Jump 0 _ 0) library@GadgetLibrary{..}    = return $ S.singleton (B.empty,[])
+libraryLookup g library@GadgetLibrary{..}                   = M.lookup g gadgetMap
 
 libraryMerge :: GadgetLibrary -> GadgetLibrary -> GadgetLibrary
 libraryMerge a b = GadgetLibrary $ M.unionWith S.union (gadgetMap a) (gadgetMap b)
 
 libraryInsert :: G.Gadget -> (B.ByteString, G.ClobberList) -> GadgetLibrary -> GadgetLibrary
-libraryInsert !gadget !(value,clobber) !library = GadgetLibrary 
-                                                $! M.insertWith union' gadget (S.singleton (B.copy value,clobber))
-                                                $ gadgetMap library
+libraryInsert !gadget !(value,clobber) !library =   GadgetLibrary 
+                                                $!  M.insertWith union' gadget (S.singleton (B.copy value,clobber))
+                                                $   gadgetMap library
     where
         union' a b = let r = S.union a b in r `seq` r
 
@@ -145,6 +145,7 @@ discoverMore' stop generator library = do
         -- gadget library
         process :: [Metadata] -> [(G.Gadget,(B.ByteString,G.ClobberList))]
         process stream = do
-            !(gadget, clobber) <- concat $ maybeToList $ eval stream >>= return . G.match
-            return $! (gadget, (B.concat $ map mdBytes stream,clobber))
+            let bytes           =   B.concat $ map mdBytes stream
+            !(gadget, clobber)  <-  concat $ maybeToList $ eval stream >>= return . G.match (fromIntegral $ B.length bytes)
+            return $! (gadget, (bytes ,clobber))
 

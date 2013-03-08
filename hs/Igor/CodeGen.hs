@@ -511,8 +511,8 @@ compileGadget gadget = do
 -- | Ensures that a gadget only clobbers the unallocated locations described in
 -- the locationPool.
 doesNotClobber locationPool _                   (_,[])         = True
-doesNotClobber locationPool (G.Jump X.Always _) (_,clobber)    = doesNotClobber' (X.EFLAG `S.insert` locationPool) clobber
-doesNotClobber locationPool (G.Jump _ _)        (_,clobber)    = doesNotClobber' locationPool clobber
+doesNotClobber locationPool (G.Jump _ X.Always _) (_,clobber)  = doesNotClobber' (X.EFLAG `S.insert` locationPool) clobber
+doesNotClobber locationPool (G.Jump _ _ _)        (_,clobber)  = doesNotClobber' locationPool clobber
 doesNotClobber locationPool _                   (_,clobber)    = doesNotClobber' (X.EFLAG `S.insert` locationPool) clobber
 
 doesNotClobber' locationPool clobber =
@@ -585,27 +585,27 @@ jump offsetLabel partialReason = do
     reason <- partialReason
     case reason of
         Always                  ->
-            buildJump (G.Jump X.Always) offsetLabel
+            buildJump (flip G.Jump X.Always) offsetLabel
         Because relation a b    -> do
             asRegister a $ \aReg ->
                 asRegister b $ \bReg ->
                 compileGadget $ G.Compare aReg bReg
-            buildJump (G.Jump relation) offsetLabel
+            buildJump (flip G.Jump relation) offsetLabel
 
-buildJump :: (Integer -> G.Gadget) -> Label -> Statement
+buildJump :: (Integer -> Integer -> G.Gadget) -> Label -> Statement
 buildJump jumpFlavor target = do
     state@CodeGenState{..}  <- get
     currentOffset           <- currentByteOffset
     maybeTargetOffset       <- lift $ maybeToList $ target `M.lookup` labelMap
-    jumpLength              <- lift $ 0:[2..16]
+    jumpLength              <- lift $ [2..16]
     case maybeTargetOffset of
         Just targetOffset   -> do
             -- We can't jump backward with a 0 length jump...
             guard $ jumpLength > 0
             let randomBytes =  translateGadgetThat
-                                    (isRightSize jumpLength)
+                                    (return True)
                                     state
-                                    (jumpFlavor (targetOffset - currentOffset - jumpLength))
+                                    (jumpFlavor jumpLength (targetOffset - currentOffset - jumpLength))
             (bytes,gen)     <- lift $ sampleStateT randomBytes randomGenerator
             get >>= \state -> put $ state {
                     generatedCode   = generatedCode ++ [Right bytes]
@@ -616,7 +616,7 @@ buildJump jumpFlavor target = do
             -- do not exist, but it is _MUCH_ cleaner than acquiring a list of all valid
             -- jump sizes.
             let jumpHolder          = JumpHolder {
-                jumpFlavor      = jumpFlavor
+                jumpFlavor      = jumpFlavor jumpLength
             ,   jumpPosition    = currentOffset
             ,   jumpLength      = jumpLength
             ,   jumpTarget      = target

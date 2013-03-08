@@ -510,9 +510,10 @@ compileGadget gadget = do
 
 -- | Ensures that a gadget only clobbers the unallocated locations described in
 -- the locationPool.
-doesNotClobber locationPool _            (_,[])         = True
-doesNotClobber locationPool (G.Jump _ _) (_,clobber)    = doesNotClobber' (locationPool) clobber
-doesNotClobber locationPool _            (_,clobber)    = doesNotClobber' (X.EFLAG `S.insert` locationPool) clobber
+doesNotClobber locationPool _                   (_,[])         = True
+doesNotClobber locationPool (G.Jump X.Always _) (_,clobber)    = doesNotClobber' (X.EFLAG `S.insert` locationPool) clobber
+doesNotClobber locationPool (G.Jump _ _)        (_,clobber)    = doesNotClobber' locationPool clobber
+doesNotClobber locationPool _                   (_,clobber)    = doesNotClobber' (X.EFLAG `S.insert` locationPool) clobber
 
 doesNotClobber' locationPool clobber =
     let
@@ -596,7 +597,7 @@ buildJump jumpFlavor target = do
     state@CodeGenState{..}  <- get
     currentOffset           <- currentByteOffset
     maybeTargetOffset       <- lift $ maybeToList $ target `M.lookup` labelMap
-    jumpLength              <- lift $ [2..16]
+    jumpLength              <- lift $ 0:[2..16]
     case maybeTargetOffset of
         Just targetOffset   -> do
             -- We can't jump backward with a 0 length jump...
@@ -743,11 +744,30 @@ makeLabels n = sequence $ replicate (fromIntegral n) makeLabel
 -- | Mark the current position as the given label.
 label :: Label -> Statement
 label l = do
-    state@CodeGenState{..}    <- get
-    currentOffset           <- currentByteOffset
-    put $ state {
-        labelMap        = M.insert l (Just currentOffset) labelMap 
+    CodeGenState{..}        <-  get
+    currentOffset           <-  currentByteOffset
+    newCode                 <-  mapM (replaceJumpHolders currentOffset) generatedCode
+    state                   <-  get
+    put state {
+            labelMap        = M.insert l (Just currentOffset) labelMap 
+        ,   generatedCode   = newCode
     }
+    where
+        replaceJumpHolders :: Integer -> Either JumpHolder B.ByteString -> Partial (Either JumpHolder B.ByteString)
+        replaceJumpHolders currentOffset v@(Right bytes)    = return v
+        replaceJumpHolders currentOffset v@(Left (JumpHolder{..}))
+            |   jumpTarget /= l     =   return v
+            |   otherwise           =   do
+                state@CodeGenState{..}  <-  get
+                let jumpOffset          =   currentOffset - jumpPosition - jumpLength
+                let jumpGadget          =   jumpFlavor jumpOffset
+                let isRightSize         =   (==jumpLength) . fromIntegral . B.length
+                (bytes,gen)             <-   lift $ sampleStateT (translateGadgetThat isRightSize state jumpGadget) randomGenerator
+                --let bytes               =   B.pack [0xde,0xad,fromIntegral jumpOffset, fromIntegral jumpLength,0xbe,0xef]
+                put state {
+                    randomGenerator     =   gen
+                }
+                return $ Right bytes
 
 generate :: D.GadgetLibrary -> StdGen -> Program -> Maybe GeneratedCode
 generate library gen program = listToMaybe $ do
@@ -755,28 +775,12 @@ generate library gen program = listToMaybe $ do
         eoc <- makeLabel
         program
         label eoc
-    (_,solution)    <- runStateT program' $ initialState library gen
+    (_,solution)        <- runStateT program' $ initialState library gen
     --let eitherCode  = replaceAllJumpHolders solution -- Turn solution into [Either Meta Jump]
     --let eitherCode  = generatedCode solution -- Turn solution into [Either Meta Jump]
     --let byteCode    = B.concat $ rights eitherCode -- Turn the Either values into Meta lists and concats
-    byteCode        <- replaceAllJumpHolders solution
+    ([], byteCode)      <- return $ partitionEithers $ generatedCode solution
     return GeneratedCode {
-            byteCode            = byteCode
+            byteCode            = B.concat byteCode
         ,   localVariableSize   = 0 - localVariableOffset solution
     }
-    where
-        replaceAllJumpHolders :: CodeGenState -> [B.ByteString]
-        replaceAllJumpHolders state@CodeGenState{..} = do
-            let randomCode  =   mapM (replaceJumpHolder state) generatedCode 
-            (chosenCode,_ ) <-  sampleStateT randomCode randomGenerator
-            return $ B.concat chosenCode
-
-        replaceJumpHolder :: CodeGenState -> Either JumpHolder B.ByteString -> RVarT [] B.ByteString
-        replaceJumpHolder state (Right bytes)             = return bytes
-        replaceJumpHolder state (Left (JumpHolder{..}))    = do
-            let oldState = state { locationPool = jumpClobberable }
-            targetOffset <- lift $  maybeToList $ join $ jumpTarget `M.lookup` labelMap oldState
-            translateGadgetThat isRightSize oldState (jumpFlavor (targetOffset - jumpPosition - jumpLength))
-            where
-                isRightSize = (==jumpLength) . fromIntegral . B.length
-

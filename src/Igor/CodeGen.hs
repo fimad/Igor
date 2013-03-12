@@ -410,10 +410,10 @@ asRegister paramable method =
             CodeGenState{..}    <-  get
             baseMap             <-  lift $ maybeToList $ (scale,offset) `M.lookup` validIndexedWrites
             valueReg            <-
-                claimRegisterIfNot baseReg (M.keys baseMap) $ \tmpBaseReg -> do
+                claimRegisterIfNot baseReg (baseReg : M.keys baseMap) $ \tmpBaseReg -> do
                     indexMap        <-  lift $ maybeToList $ tmpBaseReg `M.lookup` baseMap
                     compileGadget $ G.LoadReg tmpBaseReg baseReg
-                    claimRegisterIfNot indexReg (M.keys indexMap) $ \tmpIndexReg -> do
+                    claimRegisterIfNot indexReg (indexReg : M.keys indexMap) $ \tmpIndexReg -> do
                         compileGadget $ G.LoadReg tmpIndexReg indexReg
                         let valueRegs = (join $ maybeToList $ tmpIndexReg `M.lookup` indexMap) 
                         claimRegister valueRegs $ \valueReg -> do

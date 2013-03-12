@@ -17,3 +17,15 @@ doc/
 udis86/
 libemu/
 distorm/
+
+*.prof
+*.hp
+*.ps
+*.exe
+*.s
+*.S
+*.o
+*.out
+library.*
+*_libs/
+*.html

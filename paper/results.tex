@@ -16,21 +16,21 @@
         equivalent to a given seed program while at the same time exhibiting a
         high degree of observable dissimilarity among successive generations.
         In addition to this we are adding the additional goal that the generated
-        code exhibit a byte distribution similar to those of ``normal'' Windows
-        executables.
+        code exhibit a byte frequency distribution similar to those of
+        ``normal'' Windows executables.
 
     \section{Functional Equivalence}
 
         For a metamorphic engine to be useful it must claim to preserve the
         semantics of the seed program. In our case the seed program is expressed
         as a sequence of predicate \footnote{This is what the original authors
-        called them, likely because their implementation was in Prolog and
+            called them, likely because their implementation was in Prolog and
         statements corresponded to logical predicates.} statements which have a
         direct mapping to sequences of gadgets. Each gadget can then be
         instantiated by any gadget instance in the library. Further each gadget
         is parameterized by the registers and memory locations that it operates
         on. Therefore to show that the code generation preserves the original
-        semantics we must show the following things:
+        semantics of the predicate statements we must show the following things:
 
         \begin{enumerate}
 
@@ -47,6 +47,7 @@
         \end{enumerate}
 
         \subsection{Gadget Instance Equivalence}
+        \label{sec:results-gadget-inst-eq}
             
             The equivalence of the various instances of a particular gadget
             parameterization in the gadget library follows from the
@@ -59,22 +60,24 @@
             instruction handled by the abstract evaluator only results in a
             valid execution state if all of the side effects of the instruction
             can be easily expressed in terms of the initial execution state.
-            For instance instructions following conditional jumps result in
-            invalid execution states because they have nondeterministic
-            side-effects.
+            For instance instructions following conditional jumps, and
+            instruction sequences that perform multiple indirect writes to
+            memory result in invalid execution states because they have
+            nondeterministic side-effects.
 
             The gadget discovery algorithm that matches classes of gadgets to
             execution states is similarly conservative. States that include
-            indirect memory accesses (unless explicitly required by the gadget)
-            are are disqualified from being included in the library. The only
-            allowed side effects of a gadget is the clobbering of general
-            purpose registers with either constant values or values from other
-            registers. This ensures that gadgets only perform safe operations
-            and that they can be fully described by the gadget's
-            semantics\footnote{clarify} and the list of clobbered register
-            locations.
+            indirect memory accesses (unless explicitly required by the gadget,
+            e.g. \emph{LoadMemReg} and \emph{StoreMemReg}) are are disqualified
+            from being included in the library. The only allowed side effects of
+            a gadget is the clobbering of general purpose registers with either
+            constant values or values from other registers. This ensures that
+            gadgets only perform safe operations and that they can be fully
+            described by the gadget's semantics\footnote{Need a more descriptive
+            term for this, replace this with the terminology established in the
+            methodology chapter.} and the list of clobbered register locations.
 
-        \subsection{Irrelevance of Specific Registers}
+        \subsection{Gadget/Statement Equivalence \& Irrelevance of Specific Registers}
 
             All of the abstract locations that are exposed to the statement
             layer resolve to memory locations at positive and negative offsets
@@ -85,36 +88,43 @@
 
             Each statement has a core semantic that maps to specific gadgets. In
             the case of this implementation each statement corresponds to a
-            single core gadget operation. Given this it is possible to define
-            the operational semantics of a statement in terms of the gadget that
-            implements it.
+            single core gadget operation\footnote{For instance the \emph{add}
+            statement's core semantic corresponds to the \emph{Plus} gadget.}.
+            Given this it is possible to define the operational semantics of a
+            statement in terms of the gadget that implements it.
 
             To fully execute a statement the values or constants that constitute
-            the statements parameters must be loaded into temporary registers.
-            This is done through the \emph{LoadMemReg} and \emph{LoadConst}
-            gadgets. After the necessary values have been loaded into temporary
-            registers a temporary register is allocated for the result of the
-            operation if applicable and the core operation is performed on the
-            temporary registers. If the result is intended to be saved the
-            temporary register corresponding to the results is placed back into
-            the abstract location through a \emph{StoreMemReg} gadget.
+            the statements parameters must be loaded into temporary registers so
+            that they may be used with the corresponding gadget\footnote{Unless
+            required by the semantics of the gadget, each gadget only operates
+            on register locations}.  This is done through the \emph{LoadMemReg}
+            and \emph{LoadConst} gadgets. After the necessary values have been
+            loaded into temporary registers, another temporary register is
+            allocated for the result of the operation if applicable and the core
+            gadget is performed on the temporary registers. If the result is
+            intended to be saved the temporary register corresponding to the
+            results is placed back into the abstract location through a
+            \emph{StoreMemReg} gadget.
             
             Temporary registers are allocated for the duration of the
             statement's execution and are temporarily removed from the pool of
             unallocated general registers. When translating gadgets into
             concrete instances, only those instances whose clobber list is a
             subset of the current unallocated register pool are considered. This
-            implies that the total effect of the sequence of gadgets
-            corresponding to sequence can be fully described by the gadget's
-            WORD/SEMANTICS???.
+            implies that the total observable effect of the sequence of gadgets
+            that corresponds to a given statement can be fully described by the
+            each gadget's core operational semantic, which as shown in
+            section~\ref{sec:results-gadget-inst-eq} is constant across all gadget
+            instances.
         
     \section{Test Suite}
         
         The next two sections assess the performance of the metamorphic engine
-        in general along the individual performances of individual libraries
-        through testing the resulting code given a combination of library and
-        seed programs. This section describes each library, and sample programs
-        used and the motivation for their being included in the test suite.
+        in general along the individual performances of specific libraries
+        through testing the generated code given a combination of gadget library
+        and seed program. This section describes the libraries, and sample
+        programs used and the motivation for their being included in the test
+        suite.
 
         \subsection{Libraries}
 
@@ -126,6 +136,7 @@
             and is referred to as ``Uniform Random''.
         
         \subsection{Sample Programs}
+        \footnote{Should I include the sample program source code here as well?}
 
             \subsubsection{Max}
 
@@ -155,50 +166,46 @@
     \section{Appearing Normal}
 
         For the purposes of this paper we define appearing like a ``normal''
-        Windows program as having a byte distribution similar to those of
-        typical Windows programs. As the term ``typical Windows program'' can be
-        interpreted in a variety of ways, we use the conservative definition
-        that those programs included in a vanilla install of the Windows
-        operating system are ``normal Windows Programs''.
+        Windows program as having a byte frequency distribution similar to those
+        of normal Windows programs. 
         
-        \subsection{Distribution of Normal Windows Programs}
+        Due to the potential ambiguity of what constitutes a normal Windows
+        program, we chose a very conservative definition and built the byte
+        frequency distribution from executables found in a vanilla install of
+        the Windows operating system. In particular, the distribution was
+        generated from each {.dll} and {.exe} in the subdirectories of
+        \emph{C:/Program Files/} folder found in a fresh install of the 32-bit
+        version of Microsoft Windows 7 Ultimate. The resulting distribution is
+        built from a total of $248$ files and the most frequent $32$ bytes are
+        given in table~\ref{tab:results-windows-dist}.
 
-            To build a byte distribution of normal Windows programs we obtained
-            a fresh install of the 32-bit version of Microsoft Windows 7
-            Ultimate, and scanned each {.dll} and {.exe} in the subdirectories
-            of \emph{C:/Program Files/} folder. The resulting distribution is
-            built from a total of $248$ files and the most frequent $32$ bytes
-            are given in table \ref{tab:results-Windows-dist}.
+        \begin{table}
+            \centering
+            \begin{tabular}{|c|c||c|c||c|c||c|c|}
+                \hline
+                Byte & Freq & Byte & Freq & Byte & Freq & Byte & Freq \\
+                \hline
+                0 & 0.1482 & 116 & 0.0076 & 117 & 0.0055 & 254 & 0.0048 \\
+                \hline
+                255 & 0.0904 & 204 & 0.0073 & 69 & 0.0055 & 100 & 0.0048 \\
+                \hline
+                1 & 0.0125 & 3 & 0.0072 & 97 & 0.0052 & 40 & 0.0048 \\
+                \hline
+                32 & 0.0122 & 8 & 0.0072 & 114 & 0.0052 & 105 & 0.0047 \\
+                \hline
+                139 & 0.0101 & 6 & 0.0066 & 232 & 0.0052 & 12 & 0.0047 \\
+                \hline
+                2 & 0.0097 & 10 & 0.0063 & 16 & 0.0050 & 110 & 0.0047 \\
+                \hline
+                101 & 0.0093 & 111 & 0.0062 & 7 & 0.0050 & 99 & 0.0045 \\
+                \hline
+                4 & 0.0079 & 128 & 0.0062 & 15 & 0.0050 & 80 & 0.0045 \\
+                \hline
+            \end{tabular}
+            \caption{The distribution of bytes in normal Windows programs.}
+            \label{tab:results-windows-dist}
+        \end{table}
 
-            \begin{table}
-                \centering
-                \begin{tabular}{|c|c||c|c||c|c||c|c|}
-                    \hline
-                    Byte & Freq & Byte & Freq & Byte & Freq & Byte & Freq \\
-                    \hline
-                    0 & 0.1482 & 116 & 0.0076 & 117 & 0.0055 & 254 & 0.0048 \\
-                    \hline
-                    255 & 0.0904 & 204 & 0.0073 & 69 & 0.0055 & 100 & 0.0048 \\
-                    \hline
-                    1 & 0.0125 & 3 & 0.0072 & 97 & 0.0052 & 40 & 0.0048 \\
-                    \hline
-                    32 & 0.0122 & 8 & 0.0072 & 114 & 0.0052 & 105 & 0.0047 \\
-                    \hline
-                    139 & 0.0101 & 6 & 0.0066 & 232 & 0.0052 & 12 & 0.0047 \\
-                    \hline
-                    2 & 0.0097 & 10 & 0.0063 & 16 & 0.0050 & 110 & 0.0047 \\
-                    \hline
-                    101 & 0.0093 & 111 & 0.0062 & 7 & 0.0050 & 99 & 0.0045 \\
-                    \hline
-                    4 & 0.0079 & 128 & 0.0062 & 15 & 0.0050 & 80 & 0.0045 \\
-                    \hline
-                \end{tabular}
-                \caption{The distribution of bytes in normal Windows programs.}
-                \label{tab:results-Windows-dist}
-            \end{table}
-
-        \subsection{Evaluation}
-        
         The notation of classifying families of programs and files through
         frequency distributions has a strong president in literature
         \cite{chisquared,hmm_evade,stat_model,fileprints}. The basis for our
@@ -225,9 +232,10 @@
         $$X^2 = \sum_{i=0}^{255} \frac{(O_i - E_i)^2}{E_i}$$
 
         After the test statistic $X^2$ is calculated it is compared to the
-        p-value of the chi-squared distribution parameterized the appropriate
-        degrees of freedom and false-positive error rate. If the calculated
-        $X^2$ is less than the p-value then the hypothesis is accepted.
+        p-value of the chi-squared distribution parameterized with the
+        appropriate degrees of freedom and false-positive error rate. If the
+        calculated $X^2$ is less than the p-value then the hypothesis is
+        accepted.
 
         In general the degrees of freedom is equivalent to one minus the number
         of classes, in this case it is $255$ which corresponds to one less than
@@ -252,15 +260,15 @@
             the different libraries, results in bold indicate that they program
             has been classified as belonging to the family of normal Windows
             programs}
-            \label{tab:results-Windows-like}
+            \label{tab:results-windows-like}
         \end{table}
 
-        Therefore the corresponding p-value is $293.24$ which means that any
-        $X^2$ values less than $293.24$ indicate that the sample program belongs
-        to the family of normal Windows programs. Table \ref{tab:results-Windows-dist}
-        presents the $X^2$ values for each combination of library and sample
-        program, those in bold indicate that the program is classified as being
-        a normal Windows program.
+        The corresponding p-value with this parameterization is $293.24$. This
+        means that any $X^2$ values less than $293.24$ indicates that the sample
+        program belongs to the family of normal Windows programs.
+        Table~\ref{tab:results-windows-like} presents the $X^2$ values for each
+        combination of library and sample program, those in bold indicate that
+        the program is classified as being a normal Windows program.
 
         %http://www.danielsoper.com/statcalc3/calc.aspx?id=12
         %293.24
@@ -270,40 +278,52 @@
         Given that the metamorphic engine is attempting to generate programs
         that adhere to a specific common byte distribution the variations among
         generations would have to be present in the ordering of the bytes in the
-        resulting programs. Accordingly the evaluation metric for metamorphic
-        variety is based off of the systems that measure variation in ordering
-        \cite{cfg_lcs,towards_lcs}.
+        generated programs. 
 
-        Specifically, the evaluation metric is modelled after the system
+        Accordingly, the evaluation metric is modelled after the system
         presented in \cite{cfg_lcs} which uses the longest common subsequence
-        (LCS) as its foundation. The system as described in \cite{cfg_lcs}
-        is concerned with the sequences of opcodes in the basic blocks of the
-        control flow graph.
+        (LCS) as its basis. The metric described in \cite{cfg_lcs} is concerned
+        with the sequences of opcodes in the basic blocks of the control flow
+        graph and yields a value from $0$ to $1$ corresponding to the percent of
+        overlap in corresponding basic blocks in the control flow graph.
         
         Given that our metamorphic engine does not support basic block
         reordering as one of it's obfuscation techniques it follows that
         corresponding basic blocks in each variant will appear in the same
-        relative ordering in the generated code. The metric has been accordingly
+        relative ordering in the generated code. Therefore the metric has been
         adapted to take advantage of this simplification.
 
         \begin{table}
             \centering
-            \begin{tabular}{|c||c|c|c|c|c|c|}
+            \begin{tabular}{|c||c|c|c|c|c|c|c|}
                 \hline
-                Engine & Xor & Factorial & Max & Sample4 & Sample5 & Sample6 \\
+                Engine & Baseline & Xor & Factorial & Max & Sample4 & Sample5 & Sample6 \\
                 \hline
-                Uniform Random & - & - & - & - & - & - \\
+                Uniform Random  & - & - & - & - & - & - & - \\
                 \hline
-                Sampled Random & - & - & - & - & - & - \\
+                Sampled Random  & - & - & - & - & - & - & - \\
                 \hline
-                File Scanning & - & - & - & - & - & - \\
+                File Scanning   & - & - & - & - & - & - & - \\
                 \hline
             \end{tabular}
-            \caption{LCS scores for the various sample programs generated with
-            the different libraries, results in bold indicate that they program
-            has been classified as }
+            \caption{Similarity scores for the various sample programs generated
+            with the different libraries. A score of $1$ indicates that the
+            programs are identical, while $0$ indicates that there is no
+            overlap.}
             \label{tab:results-different}
         \end{table}
+
+        The similarity score between two methods is defined as follows, where
+        $A$ and $B$ are the lists of bytes making up the two methods, $LCS(A,B)$
+        is the length of their longest common subsequence, and $|B|$ is the
+        length of $B$:
+
+        $$Sim(A,B) = \frac{LCS(A,B)}{|B|}$$
+
+        The similarity scores for each seed program tested against itself is
+        shown in table~\ref{tab:results-different}. As a baseline random methods
+        were selected from different Windows executables and their similarity
+        scores are listed under the \emph{Baseline} column.
 
     \bibliography{annbib} 
 \end{document}

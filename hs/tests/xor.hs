@@ -1,9 +1,9 @@
 import Igor
 
 main = defineMethod "xorEnc" $ do
-    [array, length, key] <- makeInputs 3
-    [tmp, current, arrayEnd] <- makeLocals 3
-    [loop] <- makeLabels 1
+    [array, length, key]        <- makeInputs 3
+    [tmp, current, arrayEnd]    <- makeLocals 3
+    [loop]                      <- makeLabels 1
 
     mul     arrayEnd            length              (4 :: Integer)
     add     arrayEnd            arrayEnd            array

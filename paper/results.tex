@@ -1,0 +1,310 @@
+\documentclass[finalcopy,short]{srpaper}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+
+\title{Results}
+\author{Will Coster}
+\date{March 12, 2012}
+
+\begin{document}
+    \frontmatter
+
+    \chapter{Results}
+
+        The general goal of metamorphism is to produce code that is functionally
+        equivalent to a given seed program while at the same time exhibiting a
+        high degree of observable dissimilarity among successive generations.
+        In addition to this we are adding the additional goal that the generated
+        code exhibit a byte distribution similar to those of ``normal'' Windows
+        executables.
+
+    \section{Functional Equivalence}
+
+        For a metamorphic engine to be useful it must claim to preserve the
+        semantics of the seed program. In our case the seed program is expressed
+        as a sequence of predicate \footnote{This is what the original authors
+        called them, likely because their implementation was in Prolog and
+        statements corresponded to logical predicates.} statements which have a
+        direct mapping to sequences of gadgets. Each gadget can then be
+        instantiated by any gadget instance in the library. Further each gadget
+        is parameterized by the registers and memory locations that it operates
+        on. Therefore to show that the code generation preserves the original
+        semantics we must show the following things:
+
+        \begin{enumerate}
+
+            \item That each gadget instance in the library has the same effect
+                on the execution state.
+
+            \item That the sequences of gadgets corresponding to each statement
+                preserves the semantics of the statement.
+
+            \item That the register parameterization of the gadget is internally
+                consistent and therefore irrelevant to the overall execution of
+                the program.
+
+        \end{enumerate}
+
+        \subsection{Gadget Instance Equivalence}
+            
+            The equivalence of the various instances of a particular gadget
+            parameterization in the gadget library follows from the
+            conservativeness of the abstract evaluator and the gadget discovery
+            algorithm.
+
+            The abstract evaluator only evaluates a very small subset of the
+            full x86 instruction set. The evaluation of any instruction not so
+            defined results in an invalid execution state. Further each
+            instruction handled by the abstract evaluator only results in a
+            valid execution state if all of the side effects of the instruction
+            can be easily expressed in terms of the initial execution state.
+            For instance instructions following conditional jumps result in
+            invalid execution states because they have nondeterministic
+            side-effects.
+
+            The gadget discovery algorithm that matches classes of gadgets to
+            execution states is similarly conservative. States that include
+            indirect memory accesses (unless explicitly required by the gadget)
+            are are disqualified from being included in the library. The only
+            allowed side effects of a gadget is the clobbering of general
+            purpose registers with either constant values or values from other
+            registers. This ensures that gadgets only perform safe operations
+            and that they can be fully described by the gadget's
+            semantics\footnote{clarify} and the list of clobbered register
+            locations.
+
+        \subsection{Irrelevance of Specific Registers}
+
+            All of the abstract locations that are exposed to the statement
+            layer resolve to memory locations at positive and negative offsets
+            from the EBP register corresponding to method input and local
+            variables respectively. The mapping of abstract locations to memory
+            locations is static and does not change over the course of the
+            program.
+
+            Each statement has a core semantic that maps to specific gadgets. In
+            the case of this implementation each statement corresponds to a
+            single core gadget operation. Given this it is possible to define
+            the operational semantics of a statement in terms of the gadget that
+            implements it.
+
+            To fully execute a statement the values or constants that constitute
+            the statements parameters must be loaded into temporary registers.
+            This is done through the \emph{LoadMemReg} and \emph{LoadConst}
+            gadgets. After the necessary values have been loaded into temporary
+            registers a temporary register is allocated for the result of the
+            operation if applicable and the core operation is performed on the
+            temporary registers. If the result is intended to be saved the
+            temporary register corresponding to the results is placed back into
+            the abstract location through a \emph{StoreMemReg} gadget.
+            
+            Temporary registers are allocated for the duration of the
+            statement's execution and are temporarily removed from the pool of
+            unallocated general registers. When translating gadgets into
+            concrete instances, only those instances whose clobber list is a
+            subset of the current unallocated register pool are considered. This
+            implies that the total effect of the sequence of gadgets
+            corresponding to sequence can be fully described by the gadget's
+            WORD/SEMANTICS???.
+        
+    \section{Test Suite}
+        
+        The next two sections assess the performance of the metamorphic engine
+        in general along the individual performances of individual libraries
+        through testing the resulting code given a combination of library and
+        seed programs. This section describes each library, and sample programs
+        used and the motivation for their being included in the test suite.
+
+        \subsection{Libraries}
+
+            The library generated by the proposed method is referred to as the
+            ``Sampled Random'' library. The library corresponding the method
+            presented in \cite{franken} is referred to as the ``File Scanning''
+            library. In addition, as a base line a library that was generated by
+            sampling bytes from a uniform distribution is included as a baseline
+            and is referred to as ``Uniform Random''.
+        
+        \subsection{Sample Programs}
+
+            \subsubsection{Max}
+
+                The max program is a very simple method that takes as input two
+                signed integers and returns the greater of the two. The purpose
+                of the max program is to test value returning and forward
+                conditional jumps (if statements).
+
+            \subsubsection{Factorial}
+
+                The factorial program takes as input a signed integer and
+                returns a signed integer corresponding to the factorial of the
+                input. The calculation is done inside a loop. The factorial
+                program is intended to test various arithmetic gadgets along
+                with backward conditional jumps.
+
+            \subsubsection{Xor}
+
+                The xor program defines a method that receives as input a
+                pointer to an array of signed integers, the length of the array,
+                and an integer valued key. The method iterates through the array
+                xoring each value with the supplied key. Along with performing a
+                task commonly seen in polymorphic malware, this method also
+                demonstrates the ability to dereference memory locations, and
+                the ability to control flow through conditional jumps.
+            
+    \section{Appearing Normal}
+
+        For the purposes of this paper we define appearing like a ``normal''
+        Windows program as having a byte distribution similar to those of
+        typical Windows programs. As the term ``typical Windows program'' can be
+        interpreted in a variety of ways, we use the conservative definition
+        that those programs included in a vanilla install of the Windows
+        operating system are ``normal Windows Programs''.
+        
+        \subsection{Distribution of Normal Windows Programs}
+
+            To build a byte distribution of normal Windows programs we obtained
+            a fresh install of the 32-bit version of Microsoft Windows 7
+            Ultimate, and scanned each {.dll} and {.exe} in the subdirectories
+            of \emph{C:/Program Files/} folder. The resulting distribution is
+            built from a total of $248$ files and the most frequent $32$ bytes
+            are given in table \ref{tab:results-Windows-dist}.
+
+            \begin{table}
+                \centering
+                \begin{tabular}{|c|c||c|c||c|c||c|c|}
+                    \hline
+                    Byte & Freq & Byte & Freq & Byte & Freq & Byte & Freq \\
+                    \hline
+                    0 & 0.1482 & 116 & 0.0076 & 117 & 0.0055 & 254 & 0.0048 \\
+                    \hline
+                    255 & 0.0904 & 204 & 0.0073 & 69 & 0.0055 & 100 & 0.0048 \\
+                    \hline
+                    1 & 0.0125 & 3 & 0.0072 & 97 & 0.0052 & 40 & 0.0048 \\
+                    \hline
+                    32 & 0.0122 & 8 & 0.0072 & 114 & 0.0052 & 105 & 0.0047 \\
+                    \hline
+                    139 & 0.0101 & 6 & 0.0066 & 232 & 0.0052 & 12 & 0.0047 \\
+                    \hline
+                    2 & 0.0097 & 10 & 0.0063 & 16 & 0.0050 & 110 & 0.0047 \\
+                    \hline
+                    101 & 0.0093 & 111 & 0.0062 & 7 & 0.0050 & 99 & 0.0045 \\
+                    \hline
+                    4 & 0.0079 & 128 & 0.0062 & 15 & 0.0050 & 80 & 0.0045 \\
+                    \hline
+                \end{tabular}
+                \caption{The distribution of bytes in normal Windows programs.}
+                \label{tab:results-Windows-dist}
+            \end{table}
+
+        \subsection{Evaluation}
+        
+        The notation of classifying families of programs and files through
+        frequency distributions has a strong president in literature
+        \cite{chisquared,hmm_evade,stat_model,fileprints}. The basis for our
+        evaluation is the classification system described in \cite{chisquared}
+        which uses Pearson's chi-squared test for goodness of fit.
+
+        Pearson's chi-squared test for goodness of fit tests the hypothesis that
+        an observed frequency distribution matches a given theoretical
+        distribution. The theoretical distribution in the case of malware
+        classification is the frequency distribution of bytes in a specific
+        family of executables. In \cite{chisquared} families of executables
+        refers to various strains of metamorphic malware, in our case the family
+        of programs we care about is the family of normal Windows executables.
+        
+        %For use with the chi-squared tests, families of programs are defined as
+        %a probability distribution with parameter $\theta \in \mathbb{N}^{255}$,
+        %where $\theta_i$ corresponds to the counts of given byte value $i$
+        %occurring in a program.
+
+        The chi-squared test statistic, $X^2$, is defined by the following
+        equation, where $O_i$ is the observed frequency of byte $i$ in the
+        sample, and $E_i$ is the expected frequency.
+
+        $$X^2 = \sum_{i=0}^{255} \frac{(O_i - E_i)^2}{E_i}$$
+
+        After the test statistic $X^2$ is calculated it is compared to the
+        p-value of the chi-squared distribution parameterized the appropriate
+        degrees of freedom and false-positive error rate. If the calculated
+        $X^2$ is less than the p-value then the hypothesis is accepted.
+
+        In general the degrees of freedom is equivalent to one minus the number
+        of classes, in this case it is $255$ which corresponds to one less than
+        the number of possible byte values\cite{chisquared}. The false positive
+        rate generally accepted as statistically significant and suggested by
+        \cite{chisquared} is $0.05$.
+
+        \begin{table}
+            \centering
+            \begin{tabular}{|c||c|c|c|c|c|c|}
+                \hline
+                Engine & Xor & Factorial & Max & Sample4 & Sample5 & Sample6 \\
+                \hline
+                Uniform Random & - & - & - & - & - & - \\
+                \hline
+                Sampled Random & - & - & - & - & - & - \\
+                \hline
+                File Scanning & - & - & - & - & - & - \\
+                \hline
+            \end{tabular}
+            \caption{$X^2$ values for the various sample programs generated with
+            the different libraries, results in bold indicate that they program
+            has been classified as belonging to the family of normal Windows
+            programs}
+            \label{tab:results-Windows-like}
+        \end{table}
+
+        Therefore the corresponding p-value is $293.24$ which means that any
+        $X^2$ values less than $293.24$ indicate that the sample program belongs
+        to the family of normal Windows programs. Table \ref{tab:results-Windows-dist}
+        presents the $X^2$ values for each combination of library and sample
+        program, those in bold indicate that the program is classified as being
+        a normal Windows program.
+
+        %http://www.danielsoper.com/statcalc3/calc.aspx?id=12
+        %293.24
+
+    \section{Metamorphic Variety}
+        
+        Given that the metamorphic engine is attempting to generate programs
+        that adhere to a specific common byte distribution the variations among
+        generations would have to be present in the ordering of the bytes in the
+        resulting programs. Accordingly the evaluation metric for metamorphic
+        variety is based off of the systems that measure variation in ordering
+        \cite{cfg_lcs,towards_lcs}.
+
+        Specifically, the evaluation metric is modelled after the system
+        presented in \cite{cfg_lcs} which uses the longest common subsequence
+        (LCS) as its foundation. The system as described in \cite{cfg_lcs}
+        is concerned with the sequences of opcodes in the basic blocks of the
+        control flow graph.
+        
+        Given that our metamorphic engine does not support basic block
+        reordering as one of it's obfuscation techniques it follows that
+        corresponding basic blocks in each variant will appear in the same
+        relative ordering in the generated code. The metric has been accordingly
+        adapted to take advantage of this simplification.
+
+        \begin{table}
+            \centering
+            \begin{tabular}{|c||c|c|c|c|c|c|}
+                \hline
+                Engine & Xor & Factorial & Max & Sample4 & Sample5 & Sample6 \\
+                \hline
+                Uniform Random & - & - & - & - & - & - \\
+                \hline
+                Sampled Random & - & - & - & - & - & - \\
+                \hline
+                File Scanning & - & - & - & - & - & - \\
+                \hline
+            \end{tabular}
+            \caption{LCS scores for the various sample programs generated with
+            the different libraries, results in bold indicate that they program
+            has been classified as }
+            \label{tab:results-different}
+        \end{table}
+
+    \bibliography{annbib} 
+\end{document}
+

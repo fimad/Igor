@@ -59,9 +59,6 @@ instance Binary GadgetLibrary where
     put library@GadgetLibrary{..} = do
         let metadataSet     =   S.toList
                             $   S.unions 
-                            -- $   S.toList 
-                            -- $   S.map S.fromList 
-                            -- $   S.unions 
                             $   map (S.map fst) 
                             $   M.elems gadgetMap
         let metadataToInt   = M.fromList $ zip metadataSet [1::Int ..] 

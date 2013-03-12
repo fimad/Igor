@@ -192,7 +192,7 @@ eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Iinc})     
 eval' state _ instruction@(H.Inst {H.inPrefixes = [], H.inOpcode = H.Iimul})     = do
     let state'  = clobbersFlags state
     src                                 <- listToMaybe $ H.inOperands instruction
-    -- | There are other weirder versions of imul??
+    -- There are other weirder versions of imul??
     -- we don't want them
     guard (length (H.inOperands instruction) == 1)
     let clobberedLocation               = RegisterLocation EDX

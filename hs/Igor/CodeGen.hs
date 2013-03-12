@@ -8,6 +8,7 @@ module Igor.CodeGen
 , CodeGenState
 , MemoryAccessType (..)
 , Partial
+, Statement
 , Program
 , GeneratedCode(..)
 -- * Methods
@@ -69,6 +70,8 @@ import qualified    Igor.Gadget             as G
 import qualified    Igor.Gadget.Discovery   as D
 --import              Hdis86
 import              System.Random
+
+import              Debug.Trace
 
 -- | Variables are the type passed to the user of the library and currently the
 -- arguments to the predicate functions. This may change in the future for when
@@ -168,10 +171,10 @@ initialState library gen = CodeGenState {
     ,   locationPool        = shuffledPool
     ,   generatedCode       = []
     ,   localVariableOffset = 0
-     -- | NOTE: This is dependent on the number of registers saved before moving
+     -- NOTE: This is dependent on the number of registers saved before moving
      -- ebp to esp, which is dependent on the backend scaffolding ... ugh....
     ,   inputVariableOffset = 16
-    ,   endOfCodeLabel      = Label 1 -- ^ The end of code label will always be the first label made.
+    ,   endOfCodeLabel      = Label 1 -- The end of code label will always be the first label made.
     ,   validOffsetReads    = foldl' getValidOffsetReads M.empty $ M.keys $ D.gadgetMap library
     ,   validOffsetWrites   = foldl' getValidOffsetWrites M.empty $ M.keys $ D.gadgetMap library
     ,   validIndexedReads    = foldl' getValidIndexedReads M.empty $ M.keys $ D.gadgetMap library
@@ -407,10 +410,10 @@ asRegister paramable method =
             CodeGenState{..}    <-  get
             baseMap             <-  lift $ maybeToList $ (scale,offset) `M.lookup` validIndexedWrites
             valueReg            <-
-                claimRegisterIfNot baseReg (baseReg : M.keys baseMap) $ \tmpBaseReg -> do
+                claimRegisterIfNot baseReg (M.keys baseMap) $ \tmpBaseReg -> do
                     indexMap        <-  lift $ maybeToList $ tmpBaseReg `M.lookup` baseMap
                     compileGadget $ G.LoadReg tmpBaseReg baseReg
-                    claimRegisterIfNot indexReg (indexReg : M.keys indexMap) $ \tmpIndexReg -> do
+                    claimRegisterIfNot indexReg (M.keys indexMap) $ \tmpIndexReg -> do
                         compileGadget $ G.LoadReg tmpIndexReg indexReg
                         let valueRegs = (join $ maybeToList $ tmpIndexReg `M.lookup` indexMap) 
                         claimRegister valueRegs $ \valueReg -> do
@@ -426,8 +429,8 @@ asRegister paramable method =
                         CodeGenState{..}                <- get
                         let poolSet                     = locationPool
                         let gmap                        = D.gadgetMap library
-                        (constantGadget, constantLoc)   <- lift $ mapMaybe (getConstant poolSet) $ M.keys gmap
-                        (shiftGadget, shiftLoc)         <- lift $ mapMaybe (getShift poolSet) $ M.keys gmap
+                        (constantGadget, constantLoc)   <- lift $ mapMaybe getConstant $ M.keys gmap
+                        (shiftGadget, shiftLoc)         <- lift $ mapMaybe getShift $ M.keys gmap
                         withTempRegister [shiftLoc] $ \tempShiftReg -> do
                             -- Save the constant and shift registers in case they are special
                             unless (valueReg == constantLoc) $
@@ -461,19 +464,17 @@ asRegister paramable method =
                 numBits             = ceiling $ logBase 2 (fromIntegral value+1)
                 shiftSize           = 31 - numBits
 
-                getConstant :: S.Set X.Register -> G.Gadget -> Maybe (G.Gadget, X.Register)
-                getConstant poolSet g@(G.LoadConst reg val)
-                    -- | not $ (X.RegisterLocation reg) `S.member` poolSet = Nothing
+                getConstant :: G.Gadget -> Maybe (G.Gadget, X.Register)
+                getConstant g@(G.LoadConst reg val)
                     | shiftR val shiftSize == fromIntegral value        = Just (g, reg)
                     | otherwise                                         = Nothing
-                getConstant _ _                                         = Nothing
+                getConstant _                                           = Nothing
 
-                getShift :: S.Set X.Register -> G.Gadget -> Maybe (G.Gadget, X.Register)
-                getShift poolSet g@(G.RightShift reg val)
-                    -- | not $ (X.RegisterLocation reg) `S.member` poolSet = Nothing
+                getShift :: G.Gadget -> Maybe (G.Gadget, X.Register)
+                getShift g@(G.RightShift reg val)
                     | shiftSize == fromIntegral val                     = Just (g, reg)
                     | otherwise                                         = Nothing
-                getShift _ _                                            = Nothing
+                getShift _                                              = Nothing
                 --
 
 --------------------------------------------------------------------------------
@@ -602,8 +603,7 @@ buildJump jumpFlavor target = do
         Just targetOffset   -> do
             -- We can't jump backward with a 0 length jump...
             guard $ jumpLength > 0
-            let randomBytes =  translateGadgetThat
-                                    (return True)
+            let randomBytes =  translateGadget
                                     state
                                     (jumpFlavor jumpLength (targetOffset - currentOffset - jumpLength))
             (bytes,gen)     <- lift $ sampleStateT randomBytes randomGenerator
@@ -683,10 +683,10 @@ makeLocal = do
     let stackAddress            = X.OffsetAddress X.EBP $ fromIntegral stackOffset
     -- Allocate an integer id for the new variable
     let variableId              = Variable $ (maximum $ 0 : (map unVariable $ M.keys variableMap)) + 1
-    --variableLocation            <- lift $ locationPool++[stackVariable]
+    --variableLocation            <- lift $ (map Register $ S.toList locationPool)++[Memory stackAddress]
     put $! state {
             variableMap         = M.insert variableId (Memory stackAddress) variableMap
---        ,   locationPool        = locationPool \\ [X.MemoryLocation stackAddress]
+--        ,   locationPool        = locationPool S.\\ mkSet variableLocation
         ,   localVariableOffset = stackOffset
         }
     return variableId
@@ -761,9 +761,7 @@ label l = do
                 state@CodeGenState{..}  <-  get
                 let jumpOffset          =   currentOffset - jumpPosition - jumpLength
                 let jumpGadget          =   jumpFlavor jumpOffset
-                let isRightSize         =   (==jumpLength) . fromIntegral . B.length
-                (bytes,gen)             <-   lift $ sampleStateT (translateGadgetThat isRightSize state jumpGadget) randomGenerator
-                --let bytes               =   B.pack [0xde,0xad,fromIntegral jumpOffset, fromIntegral jumpLength,0xbe,0xef]
+                (bytes,gen)             <-   lift $ sampleStateT (translateGadget state jumpGadget) randomGenerator
                 put state {
                     randomGenerator     =   gen
                 }

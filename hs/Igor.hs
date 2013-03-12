@@ -1,14 +1,29 @@
+-- | This module re-exports everything that is required to generate code using
+-- an internal DSL. If you are interested in the implementation of anything, the
+-- majority of the methods are lifted from `Igor.CodeGen` module.
+--
+-- The following is an example of how to write a simple function that takes two
+-- arguments and returns the greater of the two.
+--
+--  > import Igor
+--  > 
+--  > main = defineMethod "max" $ do
+--  >     [a, b] <- makeInputs 2
+--  >     [aLessB] <- makeLabels 1
+--  > 
+--  >     jump    aLessB  (a -<- b)
+--  >     ret     a
+--  >     label   aLessB
+--  >     ret     b
 module Igor
 ( 
--- ^ This module re-exports much of the `Igor.CodeGen` and defines the method
--- 'defineMethod' which handles taking a library file and a destination .o file
--- from command line parameters and compiles a given method.
   defineMethod
 -- * Variables, Labels and Input
 , makeInputs
 , makeLocals
 , makeLabels
 , MemoryAccessType (..)
+, Statement
 -- * Statements
 , label
 , move

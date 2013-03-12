@@ -1,5 +1,11 @@
 
-all: annbib.pdf lit-review.pdf ext-abstract.pdf
+all: annbib.pdf lit-review.pdf ext-abstract.pdf results.pdf
+	
+results.pdf : results.tex annbib.bib
+	pdflatex results
+	bibtex results
+	pdflatex results
+	pdflatex results
 	
 lit-review.pdf : lit-review.tex annbib.bib
 	pdflatex lit-review

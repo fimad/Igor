@@ -128,22 +128,22 @@ fromDistribution numBytes byteDist = do
 -- | Implements the original authors original gadget discovery method.
 fromFilePath :: Int -> FilePath -> IO Source
 fromFilePath byteWindow filepath = do
-    -- | This will allow us to keep state between calls to this Source. The
+    -- This will allow us to keep state between calls to this Source. The
     -- state in this case is the remaining bytestring of the last file we read
     -- in and a list of the files that remain to be read in.
     stateRef    <-  newMVar (B.empty ,[filepath])
     return $ fromFilePath' stateRef 
     where
         fromFilePath' stateRef = do
-            -- | Find out where we left off
+            -- Find out where we left off
             (bytes, filePaths)  <- takeMVar stateRef
             if not $ B.null bytes
                 then do
-                    -- | Write the updated state
+                    -- Write the updated state
                     putMVar stateRef (B.drop byteWindow bytes, filePaths)
                     return $ Just $ B.take byteWindow bytes
                 else
-                    -- | Check if there are remaining files to read in, if there
+                    -- Check if there are remaining files to read in, if there
                     -- aren't return that we have reached the limit of this
                     -- source.
                     if null filePaths
@@ -152,10 +152,10 @@ fromFilePath byteWindow filepath = do
                         -- otherwise we will crash and burn upon completion
                         putMVar stateRef (B.empty, [])
                         return Nothing
-                    -- | Read in the next file and try the method again.
+                    -- Read in the next file and try the method again.
                     else do
                         let (nextFile:remainingPaths)   =   filePaths
-                        -- | If the next filepath is a file, read it in and
+                        -- If the next filepath is a file, read it in and
                         -- recurse with the contents of the file
                         isFile                          <-  doesFileExist nextFile 
                         if isFile
@@ -164,7 +164,7 @@ fromFilePath byteWindow filepath = do
                                 contents    <- B.readFile nextFile
                                 putMVar stateRef (contents, remainingPaths)
                                 fromFilePath' stateRef
-                            -- | If it is not a file it's a directory. So we
+                            -- If it is not a file it's a directory. So we
                             -- read it's contents, split it's contents into
                             -- files and directories. Filter the files by
                             -- extension and recurse with the new paths

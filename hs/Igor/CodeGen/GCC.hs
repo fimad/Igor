@@ -16,6 +16,8 @@ import              System.IO.Temp
 import              System.Process
 import              System.Random
 
+asPath = "/usr/i586-mingw32msvc/bin/as"
+
 compile :: GadgetLibrary
         -> FilePath -- ^ Where to write the *.o file to
         -> [(String,Program)]  -- ^ A list of functions to generate
@@ -31,7 +33,7 @@ compile library file methods = do
                                 (\path handle -> do 
                                     !_ <- hPutStr handle objContents
                                     !_ <- hClose handle
-                                    readProcess "as" ["--32", "-o", file, path] ""
+                                    readProcess asPath ["--32", "-o", file, path] ""
                                 )
             --writeFile file objContents
             return True
@@ -55,9 +57,9 @@ objMethod (method,body,localVarSize) =
     unlines [
             ".LC_"++method++":"
         ,   "\t.text"
-        ,   "\t.globl\t"++method
-        ,   "\t.type\t"++method++", @function"
-        ,   method++":"
+        ,   "\t.globl\t_"++method
+--        ,   "\t.type\t"++method++", @function"
+        ,   "_"++method++":"
         ,   ".LFB_"++method++":"
         ,   "\tpush\t%ebp"
         ,   "\tpush\t%edi"
@@ -75,7 +77,7 @@ objMethod (method,body,localVarSize) =
         ,   "\tpop\t%ebp"
         ,   "\tret"
         ,   ".LFE_"++method++":"
-        ,   "\t.size\t"++method++", .-"++method
+--        ,   "\t.size\t"++method++", .-"++method
         ]
     where
         bytesForBody = unlines $ map (\b -> "\t.byte\t"++show b) $ B.unpack body

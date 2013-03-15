@@ -26,10 +26,16 @@ my $_N;
 my $_OUT;
 # The template for naming the various generations
 my $_NAME;
-# The C file to compile against the generated object file
+# The C file to compile against the generated object file. If it is not supplied
+# the .exe is not generated.
 my $_MAIN;
 # The path to the compiler to use to generate the executable
 my $_GCC = "/usr/bin/i586-mingw32msvc-gcc";
+# The path to the compiler to use to generate the executable
+my $_OBJCOPY = "/usr/bin/i586-mingw32msvc-objcopy";
+# How long should we wait before killing an unresponsive sample generator? (in
+# seconds)
+my $_TIMEOUT=300;
 
 GetOptions(
         "sample=s"      =>  \$_SAMPLE
@@ -39,6 +45,7 @@ GetOptions(
     ,   "n=i"           =>  \$_N
     ,   "main=s"        =>  \$_MAIN
     ,   "gcc=s"         =>  \$_GCC
+    ,   "timeout=i"     =>  \$_TIMEOUT
 );
 
 # Ensure that all of the command line arguments are supplied and those that are
@@ -46,7 +53,6 @@ GetOptions(
 die($_USAGE)
 if not defined($_SAMPLE) or not -e $_SAMPLE
 or not defined($_LIBRARY) or not -e $_LIBRARY
-or not defined($_MAIN) or not -e $_MAIN
 or not defined($_N)
 or not defined($_OUT) or not -d $_OUT
 or not defined($_NAME);
@@ -57,8 +63,11 @@ or not defined($_NAME);
 
 for my $i (0..($_N-1)){
     my $template = sprintf("$_OUT/$_NAME-%03d", $i);
-    `$_SAMPLE $_LIBRARY $template.o`;
-    `$_GCC -m32 $_MAIN $template.o -o $template.exe`;
+    `timeout ${_TIMEOUT}s $_SAMPLE $_LIBRARY $template.o`
+        while not -e "$template.o";
+    `$_OBJCOPY -O binary $template.o $template.bin`;
+    `$_GCC -m32 $_MAIN $template.o -o $template.exe`
+        if defined($_MAIN) and -e $_MAIN;
     print ".";
 }
 print "\n";

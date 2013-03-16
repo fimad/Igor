@@ -24,17 +24,17 @@ import qualified    Igor.Expr   as X
 -- convention for multi-parameter gadgets is that the destination location(s)
 -- is/are the first parameter(s).
 data Gadget = NoOp
-            | LoadReg X.Register X.Register
-            | LoadConst X.Register X.Value
-            | LoadMemReg X.Register X.Address
-            | StoreMemReg X.Address X.Register
-            | Plus X.Register (S.Set X.Register)
-            | Xor X.Register (S.Set X.Register)
-            | Times X.Register (S.Set X.Register)
-            | Minus X.Register X.Register X.Register
-            | RightShift X.Register Integer -- arithmetic shift
-            | Compare X.Register X.Register
-            | Jump Integer X.Reason Integer
+            | LoadReg       X.Register  X.Register
+            | LoadConst     X.Register  X.Value
+            | LoadMemReg    X.Register  X.Address
+            | StoreMemReg   X.Address   X.Register
+            | Plus          X.Register  (S.Set X.Register)
+            | Xor           X.Register  (S.Set X.Register)
+            | Times         X.Register  (S.Set X.Register)
+            | Minus         X.Register  X.Register          X.Register
+            | RightShift    X.Register  Integer -- arithmetic shift
+            | Compare       X.Register  X.Register
+            | Jump          Integer     X.Reason Integer
     deriving (Ord, Eq, Show, Read)
 
 instance Binary Gadget where

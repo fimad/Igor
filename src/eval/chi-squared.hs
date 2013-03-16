@@ -1,4 +1,5 @@
 {-# LANGUAGE TupleSections #-}
+import              Control.Applicative
 import              Control.Arrow
 import              Control.Monad
 import              Data.Binary
@@ -6,11 +7,13 @@ import qualified    Data.ByteString     as B
 import              Data.Foldable (foldr')
 import qualified    Data.Map            as M
 import              Data.Ratio
+import              Hdis86.Pure
+import              Hdis86.Types
 import              Igor.ByteModel
 import              System.Environment
 import              Text.Printf
 
-type Dist = (Integer,M.Map Word8 Integer)
+type Dist = (Integer,M.Map Opcode Integer)
 
 main :: IO ()
 main = do
@@ -43,8 +46,8 @@ main = do
         fileToDist :: FilePath -> IO Dist
         fileToDist filePath =   return
                             .   (sum . M.elems &&& id)
-                            .   foldr' (uncurry $ M.insertWith (+)) M.empty
-                            .   map (,1)
-                            .   B.unpack
+                            .   foldr' ((uncurry $ M.insertWith (+)) <$> (,1)) M.empty
+                            .   map inOpcode
+                            .   disassemble hdisConfig
                             =<< B.readFile filePath
 

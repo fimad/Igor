@@ -2,6 +2,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TemplateHaskell #-}
 module Igor.ByteModel
 ( 
 -- * Types
@@ -26,12 +27,14 @@ import              Codec.Compression.GZip
 import qualified    Data.ByteString                     as B
 import              Data.Binary
 import              Data.Char
+import              Data.DeriveTH
 import qualified    Data.Foldable                       as F
 import              Data.IORef
 import              Data.List
-import qualified    Data.Map                            as M
 import qualified    Data.IntervalMap.Interval           as IV
 import qualified    Data.IntervalMap.Strict             as IM
+import qualified    Data.Map                            as M
+import              Data.Maybe
 import              Data.Ratio
 import              Data.Random.Distribution
 import qualified    Data.Random.Distribution.Uniform    as U
@@ -222,3 +225,13 @@ generate !model = do
                 otherwise -> return $! Just result
         Nothing     -> return Nothing
 
+opToIntMap = M.fromList $ flip zip [0::Word16 ..] [minBound .. maxBound]
+intToOpMap = M.fromList $ zip [0::Word16 ..] [minBound .. maxBound]
+instance Binary Opcode where
+    put op = do
+        let Just i = M.lookup op opToIntMap
+        put i
+
+    get = do
+        i <- get 
+        return $ fromJust $ M.lookup i intToOpMap

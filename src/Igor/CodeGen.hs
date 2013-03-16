@@ -537,26 +537,58 @@ currentByteOffset = do
 --------------------------------------------------------------------------------
 
 noop :: Statement
-noop = do
-    noops   <- lift $ drop 1 $ inits $ repeat G.NoOp
-    mapM_ compileGadget noops
+noop = do 
+    state@CodeGenState{..}  <-  get
+    let potentialNoops      =   take 10 $ inits $ repeat noop'
+    let (shuffled,gen)      =   sampleState (shuffle potentialNoops) randomGenerator
+    noops                   <-  lift $ shuffled
+    put $ state {
+        randomGenerator     =   gen
+    }
+    where
+        noop' = 
+            withTempRegister' $ \writeReg -> do
+                state@CodeGenState{..}      <-  get
+                let readOnlyRegs            =   shuffle [minBound .. X.EBP]
+                let (regAs,gen')            =   sampleState readOnlyRegs randomGenerator
+                let (regBs,gen'')           =   sampleState readOnlyRegs gen'
+                regA                        <-  lift regAs
+                regB                        <-  lift regBs
+                let possibleGadgets         =   shuffle [
+                                G.LoadReg       writeReg    regA
+                            ,   G.Plus          writeReg    (S.fromList [writeReg, regA])
+                            ,   G.Xor           writeReg    (S.fromList [writeReg, regA])
+                            ,   G.Times         writeReg    (S.fromList [writeReg, regA])
+                            ,   G.Minus         writeReg    writeReg    regA
+                            ,   G.RightShift    writeReg    1
+                            ,   G.Compare       regA        regB
+                        ]
+                let (noopGadgets,gen''')    =   sampleState possibleGadgets gen''
+                noopGadget                  <-  lift noopGadgets
+                put $ state {
+                    randomGenerator         =   gen'''
+                }
+                compileGadget noopGadget
 
 move :: (Paramable a, Paramable b) => a -> b -> Statement
-move dst src =
+move dst src = do
+    noop
     saveAsRegister dst $ \dstReg ->
-    asRegister src $ \srcReg ->
-        compileGadget $ G.LoadReg dstReg srcReg
+        asRegister src $ \srcReg ->
+            compileGadget $ G.LoadReg dstReg srcReg
 
 add :: (Paramable a, Paramable b, Paramable c) => a -> b -> c -> Statement
-add dst val1 val2 = 
+add dst val1 val2 = do
+    noop
     saveAsRegister dst $ \dstReg ->
-    asRegister val1 $ \val1Reg ->
-    asRegister val2 $ \val2Reg -> do
-        compileGadget $ G.LoadReg dstReg val1Reg
-        compileGadget $ G.Plus dstReg $ S.fromList [dstReg, val2Reg]
+        asRegister val1 $ \val1Reg ->
+        asRegister val2 $ \val2Reg -> do
+            compileGadget $ G.LoadReg dstReg val1Reg
+            compileGadget $ G.Plus dstReg $ S.fromList [dstReg, val2Reg]
 
 mul :: (Paramable a, Paramable b, Paramable c) => a -> b -> c -> Statement
-mul dst val1 val2 = 
+mul dst val1 val2 = do
+    noop
     claimRegister [X.EAX] $ \dstReg -> do
         asRegister val1 $ \val1Reg ->
             asRegister val2 $ \val2Reg -> do
@@ -566,23 +598,26 @@ mul dst val1 val2 =
             compileGadget $ G.LoadReg dstReg X.EAX
 
 xor :: (Paramable a, Paramable b, Paramable c) => a -> b -> c -> Statement
-xor dst val1 val2 = 
+xor dst val1 val2 = do
+    noop
     saveAsRegister dst $ \dstReg ->
-    asRegister val1 $ \val1Reg ->
-    asRegister val2 $ \val2Reg -> do
-        compileGadget $ G.LoadReg dstReg val1Reg
-        compileGadget $ G.Xor dstReg $ S.fromList [dstReg, val2Reg]
+        asRegister val1 $ \val1Reg ->
+        asRegister val2 $ \val2Reg -> do
+            compileGadget $ G.LoadReg dstReg val1Reg
+            compileGadget $ G.Xor dstReg $ S.fromList [dstReg, val2Reg]
 
 sub :: (Paramable a, Paramable b, Paramable c) => a -> b -> c -> Statement
-sub dst val1 val2 = 
+sub dst val1 val2 = do
+    noop
     saveAsRegister dst $ \dstReg ->
-    asRegister val1 $ \val1Reg ->
-    asRegister val2 $ \val2Reg -> do
-        compileGadget $ G.LoadReg dstReg val1Reg
-        compileGadget $ G.Minus dstReg dstReg val2Reg
+        asRegister val1 $ \val1Reg ->
+        asRegister val2 $ \val2Reg -> do
+            compileGadget $ G.LoadReg dstReg val1Reg
+            compileGadget $ G.Minus dstReg dstReg val2Reg
 
 jump :: Label -> Partial JumpReason -> Statement
 jump offsetLabel partialReason = do
+    noop
     reason <- partialReason
     case reason of
         Always                  ->
@@ -633,6 +668,7 @@ buildJump jumpFlavor target = do
 ---- and moving the given variable to EAX.
 ret :: (Paramable p) => p -> Statement
 ret value = do
+    noop
     CodeGenState{..} <- get
     asRegister value $ \valueReg ->
         compileGadget $ G.LoadReg X.EAX valueReg

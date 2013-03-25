@@ -164,10 +164,10 @@ Executable max-test
             base                    >= 2.0
         ,   igor
 
-Executable sort-test
-    ghc-options: -O2 -threaded
-    Main-Is: sort.hs
-    Hs-Source-Dirs: tests
-    Build-Depends:
-            base                    >= 2.0
-        ,   igor
+--Executable sort-test
+--    ghc-options: -O2 -threaded
+--    Main-Is: sort.hs
+--    Hs-Source-Dirs: tests
+--    Build-Depends:
+--            base                    >= 2.0
+--        ,   igor

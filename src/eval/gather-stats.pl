@@ -24,7 +24,7 @@ my $_DIR;
 # The file containing the opcode distribution
 my $_OPCODES;
 # Chi-squared statistic max-bound for significance
-my $_CHI2_MAX = 616.16069393;
+my $_CHI2_MAX = 615.11150122;
 
 GetOptions(
         "test=s"        =>  \@_TESTS

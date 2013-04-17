@@ -1,3 +1,9 @@
+################################################################################
+# Run `make` to build the latest version of the paper. To build drafts of
+# individual chapters, run `make draft_chapter.pdf` where chapter is the title
+# of the chapter to be created.
+################################################################################
+
 paper.pdf: \
 	date.tex \
 	chapter_intro.tex \

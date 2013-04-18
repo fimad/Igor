@@ -135,24 +135,29 @@
 
     It would be theoretically possible to match gadgets on entire subtrees
     instead of just leaf nodes. This would allow for gadgets to be discovered
-    that performed intricate compound operations. And possibly increase the
+    that performed intricate compound operations, and possibly increase the
     variability of the programs the engine is capable of making. However this
-    flexibility would come at a price, which is that the number of unique
+    flexibility would come at a price, would be that the number of unique
     parameterizations of any given gadget type would be unbounded as each
     parameter could be any valid expression tree.
 
     %TODO:Give examples of what expressions trees look like
 
-    Given an abstract
+    Matching a bytestring and a corresponding sequence of instructions to
+    gadgets types is done by attempting to match each node of the gadget's
+    general tree with any tree in the bytestring's state forest. The hardware
+    locations that correspond to the unmatched trees in the state forest make up
+    the clobber set of the matched gadget.
 
+    In order to ensure that the clobber set is able to entirely account for all
+    of the side effects of executing the bytestring there are restrictions that
+    are placed on the unmatched expression trees in order for the match to be
+    accepted. Namely, that the expression trees must be ``safe'' to execute
+    regardless of the current execution state. To achieve this the unmatched
+    trees are only allowed to correspond to writes to registers, and are not
+    allowed to include any memory accesses as it is not possible to guarantee
+    which locations in memory will be in the resulting program's address space.
 
-                    Match gadgets with machine state after evaluating each
-                    instruction in sequence
-
-                        Disallow unsafe machine states
-
-                        States that read or write to memory locations, i.e.
-     
     \section{Code Generation}
 
     Generating executables from a semantic blueprint is done by taking a
@@ -237,87 +242,91 @@
 
     \subsection{Edge Cases}
 
-    The above 
+    The above works well for most types of gadgets but there are several
+    edge cases that require further optimizations to make the engine practical.
+    The first is the assignment of constants to variables and the second is
+    forward jumps.
 
     \subsubsection{Constants}
 
-    \subsubsection{Nonlinear Control Flow}
+    The naive approach to gadget assignment would be to directly translate an
+    assignment statement into a corresponding \emph{LoadConst} gadget. However,
+    for such a gadget to be found during the construction of the library it is
+    necessary that a particular 32 bit value be present in the bytestring at the
+    correct offset. This is a both very likely and would also be impractical to
+    store each $2^{32}$ possible \emph{loadConst} gadget in the library. 
+
+    A logical solution would be to attempt to construct the equivalent of an
+    \emph{LoadConst} gadget out of gadgets that exist in the library. There are
+    some caveats with this approach, namely that it is reminiscent of the subset
+    sum problem\footnote{The subset problem aims to find a subset of a set of
+    integer whose sum is equal to a target integer} which is NP-complete.
+
+    The following is a novel solution whose runtime is independent of the number
+    of bits in the constant being loaded. Loading an $n$-bit constant is done
+    using two gadgets. The first loads a constant where the most significant
+    bits match the lower $n$ bits of the desired constant. The second gadget
+    performs an arithmetic right shift of $32-n$ on this value to generate the
+    desired constant.
+
+    The $x86$ shift instruction takes as an operand a $8$ bit number for the
+    shift amount. This improves the odds of successfully compiling an assignment
+    statement to bytes because it relies on the odds of an $8$ bit and an $n$
+    bit number being generated independently rather than a specific $32$ bit
+    integer.
+
+    \subsubsection{Jumping Forward}
+
+    The second edge case that requires special handling is forward jumps. The
+    problem arises because jump statements are written with relative offsets in
+    terms of statements while gadgets have offsets expressed in bytes. This
+    means that in order to resolve jump statements to gadgets it is necessary to
+    know the byte offset of the statement that the jump is trying to jump to.
+
+    This becomes a problem when dealing with code that attempts to jump forward,
+    for example see the example code in figure~\ref{fig:method-forward-jump}.
+    In order to know the byte offset of the target statement, the current
+    statement must be compiled first which results in a circular dependency.
+
+    %TODO: Forward jump figure
+
+    The proposed method of resolving the circular dependency is to perform
+    compilation in two phase. During the first phases non-jump statements are
+    translated into bytes as described above. However, when a jump gadget is
+    encountered, the size of its corresponding bytestring is guessed and a
+    placeholder of the appropriate size that notes the target offset is
+    generated. After which, following statements are compiled as above.
+
+    After each statement has been translated into bytes and place holders, the
+    second phase translates the place holders into appropriate bytestrings. If
+    there are no corresponding bytes for the gadget in the library, then the
+    search backtracks potentially up to the translation of the problematic jump
+    statement in the first phase and where a different size would be guessed.
+    The backtracking process also considers different statement to gadget and
+    gadget to byte translations on the way back to re-translating the problematic
+    jump. This allows for the potential for the target byte offset to change
+    without having to throw away all of the translations after the problematic
+    jump.
 
     \section{Scaffolding}
 
+    The code generation algorithm given above handles turning statements into
+    bytes, but it does not handle linking or any of the other requirements of
+    generating actual executables.
 
-%            Code Generation
-%
-%                High level overview
-%
-%                    Resolve variables to registers and memory locations
-%
-%                    Ensures nothing of value is clobbered during execution
-%
-%                Algorithm
-%
-%                    Pruning DFS
-%
-%                    Maintain a set of clobberable/free registers
-%
-%                    For each abstract statement
-%
-%                        Non-Jumps
-%
-%                            Load memory locations into registers
-%
-%                                Not strictly necessary, but better odds of
-%                                finding a gadget parameterized over registers
-%                                than memory locations
-%
-%                                Done using non-clobbering LoadMemReg
-%
-%                                Allocate a temporary register from the free pool
-%                                for each value
-%
-%                            Load constants into registers
-%
-%                                Filter LoadConst gadgets that load a constant
-%                                that can be shifted right to give the desired
-%                                constant
-%
-%                                If necessary allocate a temporary register
-%                                result
-%
-%                                Find gadget that corresponds to the statement
-%                                with the given parameterization that only
-%                                clobbers the free registers
-%
-%                                If required, store result into memory with
-%                                StoreMemReg
-%
-%                        Jumps
-%
-%                            Instances of the same gadget may be different sizes,
-%                            cannot know the byte offset of gadgets that come
-%                            later
-%
-%                            Size of the gadget is guessed
-%
-%                            Placeholder of guessed size containing all the
-%                            jump’s information is placed in the byte stream
-%
-%                            As a second pass, each placeholder is resolved to a
-%                            gadget
-%
-%                                if none is found, backtrack up the search tree
-%
-%
-%                    Scaffolding
-%
-%                        Generated bytes are inserted between prewritten function
-%                        intro and outro
-%
-%                            Not strictly necessary, but simplifies evaluation
-%
-%                        Uses GCC/AS to compile the resulting bytes into an .o
-%                        file that can be linked against c programs for testing
+    As this is a proof of concept system and not intended for production use,
+    this implementation uses the following handwritten assembly code and tools
+    from the GNU Compiler Collection to create object files for each method, and
+    link them to form actual executables.
 
+    This approach is ideal as it allows for easy inspection of the generated
+    code in the object files, along with providing a mechanism for linking
+    generated methods against c code to perform unit testing to ensure the
+    correctness of the engine.
+
+    %TODO: insert handwritten assembly code.
+
+    %TODO: get citation for GCC
 
 %    \begin{table}
 %        \centering

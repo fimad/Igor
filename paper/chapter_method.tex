@@ -49,7 +49,7 @@
     instances for each gadget type and through that more variety in the
     generated programs.  
 
-    %Table of gadgets
+    %TODO:Table of gadgets
 
     \section{Semantic Blueprints}
 
@@ -68,7 +68,7 @@
     the specific hardware that it will be running on, and opens the door for
     cross-platform compilation.
 
-    %Table of statements
+    %TODO:Table of statements
 
     \section{Gadget Discovery}
 
@@ -107,23 +107,44 @@
     \subsection{Symbolic Evaluation}
 
     In order to match a given bytestring with the various gadget types that it
-    may implement it is necessary to be able to represent the effect on hardware
-    that the execution of the bytestring will have. Modelling the effect on
-    hardware is done by dissassembling the bytestring and then sequentially
-    symbolically evaluating the instruction. The result is a sequence of state
-    forests that represent the progressive effects on hardware.
+    may implement, it is necessary to be able to represent the effect on
+    hardware that the execution of the bytestring will have. Modelling the
+    effect on hardware is done by disassembling the bytestring and then
+    symbolically evaluating the instruction in sequence. The result is a series
+    of state forests that represent the progressive effects on hardware.
 
-    Each state forest contains a tree for each affected hardware location.
-    The tree in the forest is an expression tree where nodes are algebraic
-    operations and leaves are the initial values of hardware locations.
+    Each state forest contains a tree for each affected hardware location.  In
+    turn, each tree in the forest is an expression tree where nodes are
+    algebraic operations and leaves are the initial values of hardware
+    locations.
+
+    The types of algebraic operations that are allowed in the expression trees
+    are limited to effects which are unconditional deterministic. Further each
+    tree in the forest is required to correspond to a unique hardware location.
+    %TODO:Why bother?
+
+    %TODO:Give a diagram of what the state trees can look like
     
-    %Give a diagram of what the state trees can look like
+    \subsection{Gadget Matching}
 
-                    Symbolically evaluate short sequences of bytes
+    Each type of gadget recognized by the engine has a corresponding general
+    state tree that describes it's core semantics. Examples of what these
+    state trees look like are given in table~\ref{tab:method-general-trees}. The
+    wild card nodes are constrained to only match leaf nodes which corresponds
+    to the parameters of the gadget types described above.
 
-                        Explain the symbolic representation
+    It would be theoretically possible to match gadgets on entire subtrees
+    instead of just leaf nodes. This would allow for gadgets to be discovered
+    that performed intricate compound operations. And possibly increase the
+    variability of the programs the engine is capable of making. However this
+    flexibility would come at a price, which is that the number of unique
+    parameterizations of any given gadget type would be unbounded as each
+    parameter could be any valid expression tree.
 
-                        Aborts on non-deterministic/ambiguous machine states
+    %TODO:Give examples of what expressions trees look like
+
+    Given an abstract
+
 
                     Match gadgets with machine state after evaluating each
                     instruction in sequence
@@ -134,79 +155,168 @@
      
     \section{Code Generation}
 
+    Generating executables from a semantic blueprint is done by taking a
+    representation of a program as a sequence of statements and first resolving
+    the statements into gadgets and then resolving each gadget into actual
+    bytes.
+
+    In order to translate statements into gadgets it is necessary to first
+    assign variables to hardware locations. This requires keeping track of which
+    registers and memory locations are free and which have already been assigned
+    to variables. This paper uses a naive approach that assigns all local
+    variables and method arguments as memory addresses offset from the EBP
+    register. A fully mature implementation of this engine would use a more
+    efficient scheme and there is a lot of literature in compilers to be drawn
+    on \cite{COMPILER-REGISTER-MAPPING}, however for the purposes of
+    demonstration the naive approach is adequate.
+
+    %TODO:^^^FIND SOURCES TO CITE FOR REGISTER MAPPING
+
+    Once a mapping of local variables to hardware locations has been determined
+    it and statements have been translated to gadgets generating the bytecode
+    code for each method can be done by sequentially retrieving bytestrings
+    from the gadget library for each gadget. 
+
+    \subsection{Variable Mapping \& Statement to Gadget Translation}
+
+    Because gadgets can only be parameterized over hardware locations and not
+    local variables, a variable mapping must be generated before statements can
+    be translated into gadgets. It is possible once an assignment exists to
+    directly compile statements into gadgets. However while this approach may
+    theoretically work, in practice this is highly inefficient.
+    
+    %TODO: Give example
+
+    Recall that in this implementation, gadgets correspond to short sequences of
+    $x86$ instructions typically on the order of 1-4 instructions long. Most
+    $x86$ instructions only operate on registers. If we were to naively
+    translate statements into a single gadget, the gadget would have to include
+    the instructions that load values from memory into registers and then if
+    applicable store the value back in memory. The odds of a random sequence of
+    instructions that cooperate in this manner appearing randomly is very
+    small. Therefore to make search a practical method of code generation, it is
+    necessary to prune search paths that are unlikely to be fruitful.
+
+    To increase the likelihood that any given gadget will be present in the
+    library, statement translation explicitly generates gadgets that load
+    variables from memory addresses into temporary registers. An example of a
+    possible translation is given below. Note that each gadget is tagged with
+    the bound registers. This information will be required later when
+    translating gadgets to bytes to ensure that no temporary registers are
+    overridden as a side effect of the gadget.
+
+    %TODO: example of explicit loads and stores
+
+    \subsection{Gadget to Byte Translation}
+
+    Translating bytes to gadgets is relatively straight forward in most cases
+    and can be accomplished by randomly selecting a bytestring from the gadget
+    library for any given gadget.
+
+    The primary constraint is ensuring that the chosen bytestring does not have
+    any unintended side effects. Recall that effects on hardware that are
+    outside the scope of the core semantic of a given gadget are allowed and
+    that such effects are encapsulated in the ``clobber set''. The clobber set
+    contains a set of hardware locations that will be in an undefined state
+    after execution of the gadget.
+
+    Therefore to ensure that a gadget does not have unintended effects on the
+    execution state it is sufficient to require that the gadget's clobber set be
+    a subset of the unallocated registers. It is only necessary to consider
+    registers because in the creation of the gadget library memory writes were
+    disallowed from being present in the clobber set.
+
+    In the case that there are no bytestrings available for a given gadget, the
+    algorithm backtracks and tries another translation of the current statement
+    using different temporary registers. If every combination of temporary
+    registers is tried unsuccessfully the algorithm continues backtracking all
+    the way to the top of the search tree to where variables are mapped. If
+    backtracking this far is still insufficient the engine terminates with the
+    conclusion that the gadget library is too small does not provided adequate
+    coverage. 
+
+    \subsection{Edge Cases}
+
+    The above 
+
+    \subsubsection{Constants}
+
+    \subsubsection{Nonlinear Control Flow}
+
+    \section{Scaffolding}
 
 
-            Code Generation
-
-                High level overview
-
-                    Resolve variables to registers and memory locations
-
-                    Ensures nothing of value is clobbered during execution
-
-                Algorithm
-
-                    Pruning DFS
-
-                    Maintain a set of clobberable/free registers
-
-                    For each abstract statement
-
-                        Non-Jumps
-
-                            Load memory locations into registers
-
-                                Not strictly necessary, but better odds of
-                                finding a gadget parameterized over registers
-                                than memory locations
-
-                                Done using non-clobbering LoadMemReg
-
-                                Allocate a temporary register from the free pool
-                                for each value
-
-                            Load constants into registers
-
-                                Filter LoadConst gadgets that load a constant
-                                that can be shifted right to give the desired
-                                constant
-
-                                If necessary allocate a temporary register
-                                result
-
-                                Find gadget that corresponds to the statement
-                                with the given parameterization that only
-                                clobbers the free registers
-
-                                If required, store result into memory with
-                                StoreMemReg
-
-                        Jumps
-
-                            Instances of the same gadget may be different sizes,
-                            cannot know the byte offset of gadgets that come
-                            later
-
-                            Size of the gadget is guessed
-
-                            Placeholder of guessed size containing all the
-                            jump’s information is placed in the byte stream
-
-                            As a second pass, each placeholder is resolved to a
-                            gadget
-
-                                if none is found, backtrack up the search tree
-
-
-                    Scaffolding
-
-                        Generated bytes are inserted between prewritten function
-                        intro and outro
-
-                            Not strictly necessary, but simplifies evaluation
-
-                        Uses GCC/AS to compile the resulting bytes into an .o
-                        file that can be linked against c programs for testing
+%            Code Generation
+%
+%                High level overview
+%
+%                    Resolve variables to registers and memory locations
+%
+%                    Ensures nothing of value is clobbered during execution
+%
+%                Algorithm
+%
+%                    Pruning DFS
+%
+%                    Maintain a set of clobberable/free registers
+%
+%                    For each abstract statement
+%
+%                        Non-Jumps
+%
+%                            Load memory locations into registers
+%
+%                                Not strictly necessary, but better odds of
+%                                finding a gadget parameterized over registers
+%                                than memory locations
+%
+%                                Done using non-clobbering LoadMemReg
+%
+%                                Allocate a temporary register from the free pool
+%                                for each value
+%
+%                            Load constants into registers
+%
+%                                Filter LoadConst gadgets that load a constant
+%                                that can be shifted right to give the desired
+%                                constant
+%
+%                                If necessary allocate a temporary register
+%                                result
+%
+%                                Find gadget that corresponds to the statement
+%                                with the given parameterization that only
+%                                clobbers the free registers
+%
+%                                If required, store result into memory with
+%                                StoreMemReg
+%
+%                        Jumps
+%
+%                            Instances of the same gadget may be different sizes,
+%                            cannot know the byte offset of gadgets that come
+%                            later
+%
+%                            Size of the gadget is guessed
+%
+%                            Placeholder of guessed size containing all the
+%                            jump’s information is placed in the byte stream
+%
+%                            As a second pass, each placeholder is resolved to a
+%                            gadget
+%
+%                                if none is found, backtrack up the search tree
+%
+%
+%                    Scaffolding
+%
+%                        Generated bytes are inserted between prewritten function
+%                        intro and outro
+%
+%                            Not strictly necessary, but simplifies evaluation
+%
+%                        Uses GCC/AS to compile the resulting bytes into an .o
+%                        file that can be linked against c programs for testing
 
 
 %    \begin{table}

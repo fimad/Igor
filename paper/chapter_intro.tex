@@ -1,36 +1,44 @@
 \chapter{Introduction}
 
-    Existing metamorphic engines while producing variations that on the surface
-    differ widely among each other do a poor job of producing variations that
-    are statistically similar to benign programs. The metamorphic engine
-    presented in \cite{franken} presents one possible solution to this whereby
-    variations are pieced together from code fragments taken from benign
-    programs on the host system. However, a pitfall of this approach is that
-    while it may be statically difficult to detect, dynamically it's behaviour
-    is very suspicious. Also, due to its reliance on gadgets, instructions with
-    the desired constants, especially if they are 32bit words, maybe rare or
-    nonexistent in the library of gadgets.
+    Malware and security research is often framed as a back and forth exchange
+    or battle between ``white hat'' researchers and antivirus vendors on one
+    side and ``black hat'' malware authors on the other. Malware authors write
+    malware which infects machines of unsuspecting users to perform various
+    nefarious acts such as sending spam, or spying on the user's activity. In
+    response an entire industry has sprung up centered around protecting users
+    from malicious programs.
 
-    We present a behaviourally benign method of generating variations of a
-    program that are both statistically similar to benign programs and also
-    exhibit a high degree of variation between generations. The variation
-    between generated instances is achieved by nondeterministically piecing
-    together instances from a library of gadgets. Similarity to benign programs
-    is achieved by drawing gadgets from a random byte stream conforming to the
-    observed byte frequencies of benign programs. If the byte histograms are
-    encoded at the initial generation, then the system requires no interaction
-    with the host system to generate subsequent instances. Further, we also
-    present a method for resolving predicates which require rare constants by
-    combining algebraic gadgets to generate the desired constants or memory
-    locations. 
+    Current commercial antivirus software largely relies on static detection
+    techniques to classify malware. The most common static technique is
+    byte-signature matching where each vendor maintains a database of signatures
+    of every piece of malware that has ever been identified. Classification is
+    done by comparing the bytes in a sample file against the signatures in the
+    database. If there is a match then the sample is classified as malicious.
 
-    The resulting system will be evaluated on the achievable variation between
-    generated instances and on the overall similarity to benign programs.
-    Evaluation of the variation between instances can be measured against the
-    results of \cite{franken} and other existing metamorphic engines. Evaluation
-    of the similarity to benign programs will be achieved by measuring the
-    similarity of instances generated via various methods of modelling the byte
-    frequencies. Baseline performance will be measured against instances
-    generated from a random byte stream with a uniform distribution of byte
-    frequencies.
+    In response to this technique malware authors began creating malware that
+    was capable of altering it's appearance itself each time it infecting a new
+    host. The methods used to perform this obfuscation have become more and more
+    complex over time, ranging from simply encrypting the malware, to executing
+    the malware in custom virtual machines. In response, current research in
+    malware detection has shown that obfuscated malware can be detected by
+    comparing the byte and opcode distributions to benign programs.
+
+    As malware authors develop increasingly complex methods of obfuscating their
+    programs antivirus vendors must face the problem that reliably classifying
+    malware is NP-Complete and that static methods of analysis can only go so
+    far \cite{npcomplete}. To demonstrate the need for the inclusion of dynamic
+    detection techniques, this paper presents a metamorphic system capable of
+    producing semantically equivalent programs which exhibit a high degree of
+    variation in their byte-signatures while at the same time remaining
+    statistically similar to benign programs.
+
+    This engine is able to achieve this by re-framing malware obfuscation as a
+    compilation problem. The engine takes a semantic blue print of a program and
+    then pieces together blocks of random bytes to create a working executable.
+    By controlling the distribution of the random bytes used to generate the
+    executable the engine is able to influence statistical properties of the
+    resulting executables. The engine is able to achieve a high degree of
+    variation in byte signatures by making the process nondeterministic which
+    causes each of the programs generated are composed of different blocks
+    bytes.
 

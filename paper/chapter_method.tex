@@ -51,8 +51,35 @@
     for each gadget type and through that more variety in the generated
     programs.  
 
-    %TODO:Table of gadgets
-    \emph{table of gadgets}
+    \begin{table}
+        \centering
+        \begin{tabular}{llL}
+            \hline
+            Gadget Type & Parameters & Semantics \tabularnewline
+            \hline
+            NoOp & --- & --- \tabularnewline
+            LoadReg & $out,in$ & $out \leftarrow in$ \tabularnewline
+            LoadConst & $out,value$ & $out \leftarrow value$ \tabularnewline
+            LoadMemReg & $outReg,in,value$ & $outReg \leftarrow [in + value]$ \tabularnewline
+            StoreMemReg & $outReg,value,inReg$ & $[outReg+value] \leftarrow inReg$ \tabularnewline
+            Plus & $out,in_1,in_2$ & $out \leftarrow in_1 + in_2$ \tabularnewline
+            Minus & $out,in_1,in_2$ & $out \leftarrow in_1 - in_2$ \tabularnewline
+            Times & $out,in_1,in_2$ & $out \leftarrow in_1 \times in_2$ \tabularnewline
+            Xor & $out,in_1,in_2$ & $out \leftarrow in_1 \oplus in_2$ \tabularnewline
+            RightShift & $reg,value$ & $reg \leftarrow reg >> value$ \tabularnewline
+            Compare & $in_1,in_2$ & $eflag \leftarrow compare(in_1, in_2)$ \tabularnewline
+            Jump & $offset,reason$ & 
+            \[ eip \leftarrow
+                \begin{cases}
+                    eip + offset & \text{if } eflag \& reason\\ 
+                    eip & otherwise 
+                \end{cases}
+            \] \tabularnewline
+            \hline
+        \end{tabular}
+        \caption[List of gadgets.]{Enumeration of gadgets and their semantic definitions.}
+        \label{tab:method-gadgets}
+    \end{table}
 
     \section{Semantic Blueprints}
 
@@ -72,8 +99,34 @@
     the specific hardware that it will be running on, and opens the door for
     cross-platform compilation.
 
-    %TODO:Table of statements
-    \emph{table of statements}
+    \begin{table}
+        \centering
+        \begin{tabular}{llL}
+            \hline
+            Gadget Type & Parameters & Gadget \tabularnewline
+            \hline
+            noop & --- & NoOp \tabularnewline
+            move & $out,in$ & $out \leftarrow in$ \tabularnewline
+            add & $out,in_1,in_2$ & $out \leftarrow in_1 + in_2$ \tabularnewline
+            sub & $out,in_1,in_2$ & $out \leftarrow in_1 - in_2$ \tabularnewline
+            mul & $out,in_1,in_2$ & $out \leftarrow in_1 \times in_2$ \tabularnewline
+            xor & $out,in_1,in_2$ & $out \leftarrow in_1 \oplus in_2$ \tabularnewline
+            jump & $label,reason$ & 
+            \[ eip \leftarrow
+                \begin{cases}
+                    eip + offset(label) & \text{if } eflag \& reason\\ 
+                    eip & otherwise 
+                \end{cases}
+            \] \tabularnewline
+            \hline
+        \end{tabular}
+        \caption[List of abstract statements.]
+        {Enumeration of abstract statements and their semantic definitions. Note
+        that parameters here are either variables or constants and that each
+        statement has a clear correspondence with a gadget in
+        \ref{tab:method-gadgets}}
+        \label{tab:method-statements}
+    \end{table}
 
     \section{Gadget Discovery}
 
@@ -93,9 +146,7 @@
     fatal problem with this approach however, and that is that this approach
     requires interaction with the host environment in a way that is easily
     recognizable by behavioural detection systems due to it's uncommonly large
-    number of disk seeks.
-
-    %TODO:CITE behavioural malware detection
+    number of disk seeks \cite{anon-evade}.
 
     A naive alternative to this approach would be to randomly generate bytes
     from a uniform distribution. This solution has several beneficial
@@ -125,10 +176,33 @@
     result is a series of execution-state forests that represent the progressive
     effects on hardware that executing the byte string would have.
 
-    Each state forest contains a tree for each altered hardware location.  In
+    Each state forest contains a tree for each altered hardware location. In
     turn, each tree in the forest is an expression tree where nodes are
     algebraic operations and leaves are the initial values of hardware
-    locations.
+    locations. An example of a state forest is given in
+    figure~\ref{fig:method-state}.
+
+    \begin{figure}
+        \centering
+        \begin{tabular}{ccccccc}
+            \hline
+            \multicolumn{1}{|c|}{$eax$} &
+            \multicolumn{1}{c|}{...} &
+            \multicolumn{1}{c|}{$eflag$} &
+            \multicolumn{1}{c|}{...} &
+            \multicolumn{1}{c|}{0xdeadbeef} &
+            \multicolumn{1}{c|}{...} \\
+            \hline
+            \Tree[.$+$ [.$\times$ $eax$ $ebx$ ] $ecx$ ]
+            & & 
+            \Tree[.$cmp$ $ecx$ $edx$ ]
+            & &
+            \Tree[. $edi$ ]
+            \\
+        \end{tabular}
+        \caption{Example of a state forest produced by abstract evaluator.}
+        \label{fig:method-state}
+    \end{figure}
 
     The types of algebraic operations that are allowed in the expression trees
     are limited to effects which are unconditional and deterministic. Further
@@ -136,9 +210,6 @@
     location. This eliminates possible ambiguity which would further complicate
     the matching process.
     %TODO:Why bother?
-
-    %TODO:Give a diagram of what the state trees can look like
-    \emph{diagram of state trees}
     
     \subsection{Gadget Matching}
 
@@ -156,8 +227,51 @@
     unique parameterizations of any given gadget type would be unbounded as each
     parameter could be any valid expression tree.
 
-    %TODO:Give examples of what expressions trees look like
-    \emph{general state trees for gadget types}
+    \begin{figure}
+        \centering
+        \makebox[\textwidth][c]{
+            \begin{tabular}{ccc}
+                Plus & LoadReg & StoreMemReg \\
+                \hline
+                \\
+                    \begin{tabular}[b]{ccc}
+                        \hline
+                        \multicolumn{1}{|c|}{...} &
+                        \multicolumn{1}{c|}{$out$} &
+                        \multicolumn{1}{c|}{...} \\
+                        \hline
+                        & 
+                        \Tree[.$+$ $in_1$ $in_2$ ]
+                        & \\
+                    \end{tabular}
+                    &
+                    \begin{tabular}[b]{ccc}
+                        \hline
+                        \multicolumn{1}{|c|}{...} &
+                        \multicolumn{1}{c|}{$out$} &
+                        \multicolumn{1}{c|}{...} \\
+                        \hline
+                        & 
+                        \Tree[. $inReg$ ]
+                        & \\
+                    \end{tabular}
+                    &
+                    \begin{tabular}[b]{ccc}
+                        \hline
+                        \multicolumn{1}{|c|}{...} &
+                        \multicolumn{1}{c|}{$[out+value]$} &
+                        \multicolumn{1}{c|}{...} \\
+                        \hline
+                        & 
+                        \Tree[. $inReg$ ]
+                        & \\
+                    \end{tabular} \\
+                    
+            \end{tabular}
+        }
+        \caption{Example of a state forest produced by abstract evaluator.}
+        \label{fig:method-general-trees}
+    \end{figure}
 
     Matching a byte string and a corresponding sequence of instructions to
     gadgets types is done by attempting to match each node of the gadget's
@@ -189,10 +303,8 @@
     variables and method arguments as memory addresses offset from the
     \emph{EBP} register. A fully mature implementation of this engine would use
     a more efficient scheme and there is a lot of literature in compilers to be
-    drawn on \cite{COMPILER-REGISTER-MAPPING}, however the naive approach is
-    adequate for the purposes of demonstration.
-
-    %TODO:^^^FIND SOURCES TO CITE FOR REGISTER MAPPING
+    drawn on \cite{register-coloring}, \cite{register-iterate}, however the
+    naive approach is adequate for the purposes of demonstration.
 
     Once a mapping of local variables to hardware locations has been determined
     it is possible for statements to be translated in to gadgets. Generating the
@@ -208,8 +320,28 @@
     equivalent statements. However while this approach may theoretically work,
     in practice this is highly inefficient.
     
-    %TODO: Give example
-    \emph{example}
+    \begin{figure}
+        \centering
+        \makebox[\textwidth][c]{
+            \begin{tabular}{lcl}
+            Statements & & Gadgets \\
+            \hline
+            move($[ebp+8]$,$10$)
+            & &
+            LoadConst($[ebp+8]$,$10$) \\
+
+            sub($[ebp+4]$,$[ebp+8]$,$[ebp+16]$)
+            & &
+            Minus($[ebp+4]$,$[ebp+8]$,$[ebp+16]$) \\
+
+            mul($[ebp+4]$,$[ebp+4]$,$[ebp+4]$)
+            & &
+            Times($[ebp+4]$,$[ebp+4]$,$[ebp+4]$) \\
+            \end{tabular}
+        }
+        \caption{Example of compiling statements directly to gadgets.}
+        \label{fig:method-direct-to-gadget}
+    \end{figure}
 
     Recall that in this implementation, gadgets correspond to short sequences of
     $x86$ instructions typically on the order of 1-4 instructions long. Most
@@ -229,8 +361,41 @@
     will be required later when translating gadgets to bytes to ensure that no
     temporary registers are overridden as a side effect of the gadget.
 
-    %TODO: example of explicit loads and stores
-    \emph{example}
+    \begin{figure}
+        \centering
+        \makebox[\textwidth][c]{
+            \begin{tabular}{lcL}
+            Statements & & Gadgets \tabularnewline
+            \hline
+            move($[ebp+8]$,$10$)
+            & &
+            {
+                LoadConst($eax$,$10$) \\
+                StoreMemReg($ebp$,$8$, $eax$)\\
+            } \tabularnewline
+
+            sub($[ebp+4]$,$[ebp+8]$,$[ebp+16]$)
+            & &
+            {
+                LoadMemReg($eax$, $[ebp+8]$) \\
+                LoadMemReg($ebx$, $[ebp+16]$) \\
+                Minus($ecx$, $eax$, $ebx$) \\
+                StoreMemReg($ebp$,$8$,$ecx$) \\
+            } \tabularnewline
+
+            mul($[ebp+4]$,$[ebp+4]$,$[ebp+4]$)
+            & &
+            {
+                LoadMemReg($eax$, $[ebp+4]$) \\
+                Times($eax$, $eax$, $eax$) \\
+                StoreMemReg($ebp$,$4$,$eax$) \\
+            } \tabularnewline
+            \end{tabular}
+        }
+        \caption{Example of compiling statements to gadgets with explicit memory
+        accesses.}
+        \label{fig:method-direct-to-gadget}
+    \end{figure}
 
     \subsection{Gadget to Byte Translation}
 
@@ -310,7 +475,41 @@
     statement must be compiled first which results in a circular dependency.
 
     %TODO: Forward jump figure
-    \emph{example of jumping forward}
+    \begin{figure}
+        \centering
+        \makebox[\textwidth][c]{
+            \begin{tabular}{lcL}
+            Statements & & Gadgets \tabularnewline
+            \hline
+            jump(2,$always$)
+            & &
+            {
+                LoadConst($eax$,$10$) \\
+                StoreMemReg($ebp$,$8$, $eax$)\\
+            } \tabularnewline
+
+            sub($[ebp+4]$,$[ebp+4]$,$1$)
+            & &
+            {
+                LoadMemReg($eax$, $[ebp+8]$) \\
+                LoadMemReg($ebx$, $[ebp+16]$) \\
+                Minus($ecx$, $eax$, $ebx$) \\
+                StoreMemReg($ebp$,$8$,$ecx$) \\
+            } \tabularnewline
+
+            add($[ebp+4]$,$[ebp+4]$,$1$)
+            & &
+            {
+                LoadMemReg($eax$, $[ebp+4]$) \\
+                Times($eax$, $eax$, $eax$) \\
+                StoreMemReg($ebp$,$4$,$eax$) \\
+            } \tabularnewline
+            \end{tabular}
+        }
+        \caption{Example of compiling statements to gadgets with explicit memory
+        accesses.}
+        \label{fig:method-direct-to-gadget}
+    \end{figure}
 
     The proposed method of resolving the circular dependency is to perform
     compilation in two phase. During the first phase non-jump statements are
@@ -335,100 +534,41 @@
     bytes, but it does not handle linking or any of the other requirements of
     generating actual executables.
 
+    \begin{figure}
+        \begin{vcode}
+    .file "filename.igor"
+    
+    .LC_method:
+        .text
+        .globl    _method
+    _method:
+    .LFB_method:
+        push    %ebp
+        push    %edi
+        push    %esi
+        push    %ebx
+        mov    %esp, %ebp
+        sub    localVarSize, %esp
+        .byte  bytesForBody
+        add    localVarSize, %esp
+        pop    %ebx
+        pop    %esi
+        pop    %edi
+        pop    %ebp
+        ret
+    .LFE_method:
+        \end{vcode}
+        \caption[Example of hand written scaffolding.]{Example of hand written scaffolding for bootstrapping a method
+        that has been compiled to byte code.}
+        \label{tab:method-statements}
+    \end{figure}
+
     As this is a proof of concept system and not intended for production use,
     this implementation uses the following handwritten assembly code and tools
     from the GNU Compiler Collection to create object files for each method, and
-    link them to form actual executables.
+    link them to form actual executables \cite{gcc}.
 
     This approach is ideal as it allows for easy inspection of the generated
     code in the object files, along with providing a mechanism for linking
     generated methods against $C$ code to facilitate unit testing.
 
-    %TODO: insert handwritten assembly code.
-    \emph{give scaffolding code}
-
-    %TODO: get citation for GCC
-
-%    \begin{table}
-%        \centering
-%        \begin{tabular}{|l|l|l|l|l|}
-%            \hline
-%            Gadget Type & Input & Output & Preconditions & Postconditions  \\
-%            \hline
-%            NoOp & &
-%                &   
-%                    \parbox[c][1.2cm]{3cm}{ }
-%                &
-%                    \parbox[c][1.2cm]{3cm}{
-%                        \begin{align*}
-%                            \forall c \in C. c & \leftarrow \phi
-%                        \end{align*}
-%                    }
-%                \\
-%            \hline
-%            LoadReg & $L1$ & $L2$
-%                &   
-%                    \parbox[c][1.2cm]{3cm}{
-%                        \begin{align*}
-%                            a & \leftarrow L2 
-%                        \end{align*}
-%                    }
-%                &
-%                    \parbox[c][1.2cm]{3cm}{
-%                        \begin{align*}
-%                            L1 & \leftarrow a \\
-%                            \forall c \in C. c & \leftarrow \phi
-%                        \end{align*}
-%                    }
-%                \\
-%            \hline
-%            Plus & $L1$ & $L2,L3$
-%                &   
-%                    \parbox[c][1.2cm]{3cm}{
-%                        \begin{align*}
-%                            a & \leftarrow L2 \\ 
-%                            b & \leftarrow L3
-%                        \end{align*}
-%                    }
-%                &
-%                    \parbox[c][1.2cm]{3cm}{
-%                        \begin{align*}
-%                            L1 & \leftarrow a + b \\
-%                            \forall c \in C. c & \leftarrow \phi
-%                        \end{align*}
-%                    }
-%                \\
-%            \hline
-%            Minus & $L1$ & $L2,L3$
-%                &   
-%                    \parbox[c][1.2cm]{3cm}{
-%                        \begin{align*}
-%                            a & \leftarrow L2 \\ 
-%                            b & \leftarrow L3
-%                        \end{align*}
-%                    }
-%                &
-%                    \parbox[c][1.2cm]{3cm}{
-%                        \begin{align*}
-%                            L1 & \leftarrow a - b \\
-%                            \forall c \in C. c & \leftarrow \phi
-%                        \end{align*}
-%                    }
-%                \\
-%            \hline
-%ata Gadget = NoOp
-%            | LoadReg       X.Register  X.Register
-%            | LoadConst     X.Register  X.Value
-%            | LoadMemReg    X.Register  X.Address
-%            | StoreMemReg   X.Address   X.Register
-%            | Plus          X.Register  (S.Set X.Register)
-%            | Xor           X.Register  (S.Set X.Register)
-%            | Times         X.Register  (S.Set X.Register)
-%            | Minus         X.Register  X.Register          X.Register
-%            | RightShift    X.Register  Integer -- arithmetic shift
-%            | Compare       X.Register  X.Register
-%            | Jump          Integer     X.Reason Integer
-%        \end{tabular}
-%        \caption{Enumeration of gadgets and their semantic definitions.}
-%        \label{tab:method-gadgets}
-%    \end{table}

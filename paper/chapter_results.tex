@@ -214,7 +214,8 @@
     \begin{figure}[t]
         \makebox[\textwidth][c]{ \includegraphics[width=1.10\textwidth]{chart_lcs.png} }
         \vspace{-50pt}
-        \caption{Similarity scores for the each combination of test program
+        \caption[Graph of variation between generated programs]
+        {Similarity scores for the each combination of test program
         and gadget library. Lower scores are more desirable, a score of $1$
         indicates that the programs are identical, while $0$ indicates that
         there is no overlap.}
@@ -342,10 +343,10 @@
     \begin{figure}[t!]
         \makebox[\textwidth][c]{ \includegraphics[width=1.10\textwidth]{chart_x2.png} }
         \vspace{-50pt}
-        \caption{The average $X^2$ values of all generated instances for
-            each combination of sample program and library. Lower numbers
-            indicate a stronger similarity with the observed windows opcode
-            distribution}
+        \caption[Results for blending in with benign programs]
+        {The average $X^2$ values of all generated instances for each
+        combination of sample program and library. Lower numbers indicate a
+        stronger similarity with the observed windows opcode distribution}
         \label{tab:results-windows-like-avg}
     \end{figure}
 

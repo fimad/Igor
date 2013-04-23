@@ -10,7 +10,8 @@ paper.pdf: \
 	chapter_related.tex \
 	chapter_method.tex \
 	chapter_results.tex \
-	chapter_conclusion.tex
+	chapter_conclusion.tex \
+	annbib.bib
 
 all: paper.pdf
 

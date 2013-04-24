@@ -2,19 +2,19 @@
 
     Commercial antivirus software has historically relied on static techniques
     to detect instances of malware in the wild. Typical implementations rely on
-    byte-signatures to detect malicious programs. An active area of research is
+    byte signatures to detect malicious programs. An active area of research is
     creating robust detection techniques which are able to cope with metamorphic
-    malware which is capable of obfuscating it's byte-signature. An emerging
+    malware which is capable of obfuscating it's byte signature. An emerging
     static technique that has shown academic success is using knowledge of the
     structure of benign programs to classify malware, a prominent example of
     this being opcode frequency analysis \cite{chisquared}.
 
     The metamorphic system presented in this paper is shown to be capable of
     producing programs that exhibit a high degree of variation in their
-    byte-signatures while at the same time maintaining an opcode-frequency
+    byte signatures while at the same time maintaining an opcode-frequency
     distribution similar to those found in benign Windows programs. It performs
     well compared to state of the art gadget-based metamorphic engines in terms
-    of byte-signature variance and out performs the state of the art in respect
+    of byte signature variance and out performs the state of the art in respect
     to conforming to benign opcode distributions.
 
     Further, this paper has also provided empirical support for the claim made
@@ -23,7 +23,7 @@
     distribution can be controlled by altering the distribution that the gadgets
     are sampled from.
 
-    By achieving high levels byte-signature variance and opcode frequency
+    By achieving high levels byte signature variance and opcode frequency
     conformity the described engine demonstrates that it is currently feasible
     for malware authors to evade both the current algorithms and emerging static
     detection techniques. Given the high degree of obfuscation that state of the

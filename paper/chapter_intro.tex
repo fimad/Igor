@@ -1,44 +1,47 @@
 \chapter{Introduction}
 
     Malware and security research is often framed as a back and forth exchange
-    or battle between ``white hat'' researchers and antivirus vendors on one
-    side and ``black hat'' malware authors on the other. Malware authors write
-    malware which infects machines of unsuspecting users to perform various
+    between ``white hat'' researchers and antivirus vendors on one side and
+    ``black hat'' malware authors on the other. Malware authors write malicious
+    programs which infect machines of unsuspecting users and perform various
     nefarious acts such as sending spam, or spying on the user's activity. In
-    response an entire industry has sprung up centered around protecting users
-    from malicious programs.
+    response an entire antimalware industry has sprung up centered around
+    protecting users from malicious programs.
 
     Current commercial antivirus software largely relies on static detection
     techniques to classify malware. The most common static technique is
-    byte-signature matching where each vendor maintains a database of signatures
-    of every piece of malware that has ever been identified. Classification is
+    byte signature matching where each vendor maintains a database of signatures
+    for every piece of malware that has ever been identified. Classification is
     done by comparing the bytes in a sample file against the signatures in the
-    database. If there is a match then the sample is classified as malicious.
+    database, if there is a match then the sample is classified as malicious.
 
-    In response to this technique malware authors began creating malware that
-    was capable of altering it's appearance itself each time it infecting a new
+    In response to this technique, malware authors created malware that was
+    capable of altering it's appearance itself each time it infecting a new
     host. The methods used to perform this obfuscation have become more and more
-    complex over time, ranging from simply encrypting the malware, to executing
-    the malware in custom virtual machines. In response, current research in
-    malware detection has shown that obfuscated malware can be detected by
+    complex over time, ranging from simple encryption of the malware, to
+    executing the malware in custom virtual machines. As obfuscation techniques
+    became more advanced the appearance of obfuscated malware diverged from
+    benign programs. Which led to a current branch of research in malware
+    detection which has shown that obfuscated malware can be detected by
     comparing the byte and opcode distributions to benign programs.
 
     As malware authors develop increasingly complex methods of obfuscating their
-    programs antivirus vendors must face the problem that reliably classifying
-    malware is NP-Complete and that static methods of analysis can only go so
-    far \cite{npcomplete}. To demonstrate the need for the inclusion of dynamic
-    detection techniques, this paper presents a metamorphic system capable of
-    producing semantically equivalent programs which exhibit a high degree of
-    variation in their byte-signatures while at the same time remaining
-    statistically similar to benign programs.
+    programs antivirus vendors must in turn create sophisticated methods of
+    detection. Unfortunately for vendors, there is a theoretical bound on the
+    efficiency of a robust static classification system\cite{npcomplete}. To
+    demonstrate the need for the inclusion of dynamic detection techniques, this
+    paper presents a metamorphic system capable of producing semantically
+    equivalent programs which exhibit a high degree of variation in their
+    byte signatures while at the same time remaining statistically similar to
+    benign programs.
 
     This engine is able to achieve this by re-framing malware obfuscation as a
-    compilation problem. The engine takes a semantic blue print of a program and
-    then pieces together blocks of random bytes to create a working executable.
-    By controlling the distribution of the random bytes used to generate the
-    executable the engine is able to influence statistical properties of the
-    resulting executables. The engine is able to achieve a high degree of
-    variation in byte signatures by making the process nondeterministic which
-    causes each of the programs generated are composed of different blocks
-    bytes.
+    combined compiler and search problem. The engine takes a semantic blue print
+    of a program and then pieces together blocks of random bytes to create a
+    working executable. By controlling the distribution of the random bytes used
+    to generate the executable, the engine is able to influence statistical
+    properties of the resulting executables. The engine is able to achieve a
+    high degree of variation in byte signatures by making the process
+    nondeterministic which causes each of the programs generated are composed of
+    different blocks bytes.
 

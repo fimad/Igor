@@ -478,32 +478,24 @@
     \begin{figure}
         \centering
         \makebox[\textwidth][c]{
-            \begin{tabular}{lcL}
-            Statements & & Gadgets \tabularnewline
+            \begin{tabular}{LcL}
+                Statements & & \\
             \hline
-            jump(2,$always$)
-            & &
-            {
-                LoadConst($eax$,$10$) \\
-                StoreMemReg($ebp$,$8$, $eax$)\\
-            } \tabularnewline
 
-            sub($[ebp+4]$,$[ebp+4]$,$1$)
-            & &
-            {
-                LoadMemReg($eax$, $[ebp+8]$) \\
-                LoadMemReg($ebx$, $[ebp+16]$) \\
-                Minus($ecx$, $eax$, $ebx$) \\
-                StoreMemReg($ebp$,$8$,$ecx$) \\
-            } \tabularnewline
-
+            jump(2,$always$)  \\
+            sub($[ebp+4]$,$[ebp+4]$,$1$) \\
             add($[ebp+4]$,$[ebp+4]$,$1$)
             & &
-            {
-                LoadMemReg($eax$, $[ebp+4]$) \\
-                Times($eax$, $eax$, $eax$) \\
-                StoreMemReg($ebp$,$4$,$eax$) \\
-            } \tabularnewline
+            \parbox{2cm}{
+                \setlength{\unitlength}{.5cm}
+                \begin{picture}(3,3)
+                \thicklines
+                \put(.5,2.3){\line(0,-5){1}}
+                %\put(-2,0){\vector(1,0){1}}
+                \end{picture}
+            }
+
+            \tabularnewline
             \end{tabular}
         }
         \caption{Example of compiling statements to gadgets with explicit memory

@@ -53,35 +53,34 @@
         conservative design of both the abstract evaluator and the gadget
         discovery algorithm.
 
-        The abstract evaluator only successfully evaluates \emph{x86} instructions
-        that have a deterministic effect on the execution state.  Meaning
-        that the resulting state of every hardware location
-        \footnote{Hardware locations are defined as registers, flags and
-        memory addresses.} can be described algebraically \footnote{Without
-        the use of conditional operators.} in terms of the original values
-        of the hardware locations prior to execution. Examples of states
-        that cannot be represented in this model include the effect of
-        instructions following a conditional branch, and any sequence of
-        instructions that perform multiple indirect writes to memory.
+        The abstract evaluator only successfully evaluates \emph{x86}
+        instructions that have a deterministic effect on the execution state.
+        Meaning that the resulting state of every hardware location
+        \footnote{Hardware locations are defined as registers, flags and memory
+        addresses.} can be described algebraically\footnote{Without the use of
+        conditional operators.} in terms of the original values of the hardware
+        locations prior to execution. Examples of states that cannot be
+        represented in this model include the effect of instructions following a
+        conditional branch, and any sequence of instructions that perform
+        multiple indirect writes to memory.
 
-        Confining the space of allowed execution states in this manner
-        allows the resulting execution state to be represented as a
-        collection of algebraic expression trees, with exactly one tree for
-        each modified location. Matching bytes to gadgets is done by
-        attempting to match one the resulting expression trees to the target
-        trees defined for each class of gadget. The hardware locations whose
-        corresponding trees are not included in the match are recorded in
-        the clobber set, which fully accounts for the side-effects of the
+        Confining the space of allowed execution states in this manner allows
+        the resulting execution state to be represented as a collection of
+        algebraic expression trees, with exactly one tree for each modified
+        location. Matching bytes to gadgets is done by attempting to match one
+        the resulting expression trees to the target trees defined for each
+        class of gadget. The hardware locations whose corresponding trees are
+        not included in the match are recorded in the clobber set, which fully
+        accounts for the side-effects of the
         match.
 
-        There are several restrictions placed on the expression that are
-        allowed to be placed in the clobber set. This is done to simplify
-        the verification that a given byte-string does not have unaccounted
-        for effects on hardware. States that include indirect memory
-        accesses (unless explicitly required by the gadget, e.g.
-        \emph{LoadMemReg} and \emph{StoreMemReg}) are are disqualified from
-        being included in the library as writes and reads from unmapped
-        address result in undefined behaviour.
+        There are several restrictions placed on the expression that are allowed
+        to be placed in the clobber set. This is done to simplify the
+        verification that a given byte-string does not have unaccounted for
+        effects on hardware. States that include indirect memory accesses
+        (unless explicitly required by the gadget, e.g.  \emph{LoadMemReg} and
+        \emph{StoreMemReg}) are disqualified from being included in the library
+        as writes and reads from unmapped address result in undefined behaviour.
         
         The only allowed side effects of a gadget is the clobbering of
         general purpose registers with either constant values or values from
@@ -299,13 +298,13 @@
         \label{tab:results-windows-dist}
     \end{table}
 
-    The notation of classifying families of programs and files through
-    frequency distributions has a strong president in literature
+    The notation of classifying families of programs and files through frequency
+    distributions has a strong precedent in literature
     \cite{chisquared,hmm_evade,stat_model,fileprints}. The basis for our
-    evaluation is the classification system described in \cite{chisquared}
-    which uses Pearson's chi-squared test for goodness of fit to measure the
-    likelihood that a file under consideration belongs to a particular
-    family of programs.
+    evaluation is the classification system described in \cite{chisquared} which
+    uses Pearson's chi-squared test for goodness of fit to measure the
+    likelihood that a file under consideration belongs to a particular family of
+    programs.
 
     Pearson's chi-squared test for goodness of fit tests the hypothesis that
     an observed frequency distribution matches a given theoretical

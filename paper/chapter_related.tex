@@ -146,7 +146,7 @@
     linked to libc, which contains functions that can be used to perform
     potentially malicious operations (notably the ``system'' method which
     executes a string argument in a shell). When the attacker overruns a buffer
-    they are able to control the contents of the stack frame. In \emph{x86}
+    they are able to control the contents of the stack frame. In $x86$
     architectures, the return address and function parameters are passed on the
     stack. By specially crafting the contents of the stack, the attacker can set
     the return address to the libc ``system'' method and place a malicious

@@ -1,12 +1,12 @@
 \chapter{Method}
 
     This section describes the theoretical underpinnings and the implementation
-    of a gadget-based metamorphic engine. The engine works by maintaining a
-    large library that maps from discrete operations to bytes that will perform
-    those operations when executed. Using this library and a semantic blueprint
-    of a desired program, the engine generates an executable by
-    nondeterministically piecing together bytes from the library in a way that
-    fulfils the semantics of the program.
+    of a gadget-based metamorphic engine. The engine maintains a large library
+    that maps from discrete operations to bytes that perform those operations
+    when executed. Leveraging this library and a semantic blueprint of a desired
+    program, the engine generates an executable by nondeterministically piecing
+    together bytes from the library in a way that fulfils the semantics of the
+    program.
 
     \section{Gadgets}
     
@@ -23,16 +23,15 @@
     imposed constraints are not present in the context of a metamorphic engine.
     For instance, the requirement that a gadget end in a return statement is
     necessary in return-oriented programming because that is the mechanism
-    through which gadgets can be composed. However, in the case of metamorphic
-    engines that are able to directly generate the text section of an executable
-    this requirement is no longer necessary.
+    through which gadgets can be composed. However, given that this engine
+    directly generate the text section of an executable this requirement is no
+    longer necessary.
 
     Therefore, it is useful to re-formalize gadgets in the context where they
     are free of the constraints imposed by return-oriented programming. For the
-    purposes of this engine, gadgets are defined as a byte string that satisfies
-    a pair of preconditions that described the execution state before performing
-    the gadget, and postconditions which describe the state after the gadget has
-    been executed.
+    purposes of this engine, gadgets are defined as a byte string and a
+    corresponding semantics given as a symbolic description of the effect on the
+    execution state the byte string would have upon execution.
 
     To simplify the process of reasoning about a large collection of gadgets, a
     given byte string is restricted to matching several of a collection of
@@ -41,15 +40,6 @@
     implementation. Each type of gadget is parameterized over a list of hardware
     locations\footnote{Memory addresses and registers}. A complete listing of
     gadgets and their definitions is given in table~\ref{tab:method-gadgets}.
-
-    In table~\ref{tab:method-gadgets}, the set $C$ contains the set of hardware
-    locations that the gadget overwrites in addition to performing it's intended
-    semantics. Allowing gadgets to have limited side-effects describable by this
-    ``clobber set'' allows for junk instructions to be present in the byte
-    strings for any given gadget type. This is a desirable feature for a
-    metamorphic engine because it leads to greater variety in the byte instances
-    for each gadget type and through that more variety in the generated
-    programs.  
 
     \begin{table}
         \centering
@@ -79,6 +69,55 @@
         \end{tabular}
         \caption[List of gadgets.]{Enumeration of gadgets and their semantic definitions.}
         \label{tab:method-gadgets}
+    \end{table}
+
+    Along with the core semantics presented in table~\ref{tab:method-gadgets},
+    each byte string also has an associated ``clobber set''. This set contains
+    the set of hardware locations that the gadget overwrites in addition to
+    performing it's core semantics. Allowing gadgets to have limited
+    side-effects describable by this clobber set allows for junk
+    instructions to be present in the byte strings for any given gadget type.
+    This is a desirable feature for a metamorphic engine because it leads to
+    greater variety in the byte instances for each gadget type and through that
+    more variety in the generated programs. Concrete examples of gadgets along
+    with their clobber sets are shown in table~\ref{tab:method-clobber}.
+
+    \begin{table}
+        \centering
+        \makebox[\textwidth][c]{
+            \begin{tabular}{LLLL}
+                \hline
+                Bytes & Instructions & Gadget Type & Clobber Set \tabularnewline
+                \hline\\
+                \texttt{01CB A100} \\
+                \texttt{0000 00} 
+                &
+                add ebx, ecx \\
+                mov eax, \$10
+                &
+                Plus($ebx$,$ebx$,$ecx$)
+                &
+                $eax$
+                \tabularnewline \\ \hline \\
+                \texttt{330D 0000} \\
+                \texttt{0000 8998} \\
+                \texttt{0000 0000} \\
+                \texttt{29CA}
+                &
+                xor ecx, \$42 \\
+                mov [eax+\$10], ebx \\
+                sub edx, ecx
+                &
+                StoreMemReg($eax$, $10$, $ebx$)
+                &
+                $ecx$, $edx$
+                \tabularnewline \\
+                \hline
+            \end{tabular}
+        }
+        \caption[Concrete examples of gadgets.]
+        {Concrete examples of gadgets along with their associated clobber set}
+        \label{tab:method-clobber}
     \end{table}
 
     \section{Semantic Blueprints}
@@ -151,13 +190,13 @@
     A naive alternative to this approach would be to randomly generate bytes
     from a uniform distribution. This solution has several beneficial
     properties, namely there is no longer any interaction with the host
-    environment at all, and that there is no longer a limited number of bytes
-    that can be sampled. Despite these however, niceties there is a significant
-    downside as well. The distribution that the bytes are being sampled from no
+    environment at all, and there is no longer a limited number of bytes that
+    may be sampled. Despite these niceties there is a significant downside to
+    this approach. The distribution that the bytes are being sampled from no
     longer has any connection to the distribution of bytes found in benign
     programs.
 
-    A natural alteration to the naive approach is to pre-calculate the
+    A natural improvement to the naive approach is to pre-calculate the
     distribution of bytes found in benign programs and randomly sample bytes
     from this calculated distribution. This approach maintains all of the
     desirable benefits of the naive approach while avoiding the shortcomings of
@@ -171,10 +210,10 @@
     In order to match a given byte string with the various gadget types that it
     may implement, it is necessary to be able to represent the effect on
     hardware that the execution of the byte string will have. Modelling the
-    effect on hardware is done by disassembling the byte string and then
-    symbolically evaluating the corresponding instructions in sequence. The
-    result is a series of execution-state forests that represent the progressive
-    effects on hardware that executing the byte string would have.
+    effect on hardware is done by disassembling the byte string and symbolically
+    evaluating the corresponding instructions in sequence. The result is a
+    series of execution-state forests that represent the progressive effect on
+    hardware that executing the byte string would have.
 
     Each state forest contains a tree for each altered hardware location. In
     turn, each tree in the forest is an expression tree where nodes are
@@ -208,8 +247,8 @@
     are limited to effects which are unconditional and deterministic. Further
     each tree in the forest is required to correspond to a unique hardware
     location. This eliminates possible ambiguity which would further complicate
-    the matching process.
-    %TODO:Why bother?
+    the matching process and allows gadgets to be composed without worrying
+    about unforeseen side effects.
     
     \subsection{Gadget Matching}
 
@@ -231,6 +270,7 @@
         \centering
         \makebox[\textwidth][c]{
             \begin{tabular}{ccc}
+                \hline
                 Plus & LoadReg & StoreMemReg \\
                 \hline
                 \\
@@ -292,9 +332,9 @@
     \section{Code Generation}
 
     Generating executables from a semantic blueprint is done by taking a
-    representation of a program as a collection of methods each described as a
-    sequence of statements and resolving the statements into gadgets and then
-    resolving each gadget into actual bytes.
+    representation of a program composed of a collection of methods, each
+    described as a sequence of statements, and resolving the statements into
+    gadgets and then resolving each gadget into actual bytes.
 
     In order to translate statements into gadgets it is necessary to first
     assign variables to hardware locations. This requires keeping track of which
@@ -302,9 +342,9 @@
     to variables. This paper uses a naive approach that assigns all local
     variables and method arguments as memory addresses offset from the
     \emph{EBP} register. A fully mature implementation of this engine would use
-    a more efficient scheme and there is a lot of literature in compilers to be
-    drawn on \cite{register-coloring}, \cite{register-iterate}, however the
-    naive approach is adequate for the purposes of demonstration.
+    a more efficient scheme and there is compiler literature to be drawn on
+    \cite{register-coloring}, \cite{register-iterate}, however the naive
+    approach is adequate for the purposes of demonstration.
 
     Once a mapping of local variables to hardware locations has been determined
     it is possible for statements to be translated in to gadgets. Generating the
@@ -365,35 +405,36 @@
         \centering
         \makebox[\textwidth][c]{
             \begin{tabular}{lcL}
-            Statements & & Gadgets \tabularnewline
-            \hline
+            Statements & Gadgets \tabularnewline
+            \hline \\
             move($[ebp+8]$,$10$)
             & &
             {
-                LoadConst($eax$,$10$) \\
-                StoreMemReg($ebp$,$8$, $eax$)\\
+                LoadConst($eax$,$10$) $[eax]$ \\
+                StoreMemReg($ebp$,$8$, $eax$) $[eax]$ \\
             } \tabularnewline
 
             sub($[ebp+4]$,$[ebp+8]$,$[ebp+16]$)
             & &
             {
-                LoadMemReg($eax$, $[ebp+8]$) \\
-                LoadMemReg($ebx$, $[ebp+16]$) \\
-                Minus($ecx$, $eax$, $ebx$) \\
-                StoreMemReg($ebp$,$8$,$ecx$) \\
+                LoadMemReg($eax$, $[ebp+8]$) $[eax]$ \\
+                LoadMemReg($ebx$, $[ebp+16]$) $[eax,ebx]$ \\
+                Minus($ecx$, $eax$, $ebx$) $[eax,ebx,ecx]$ \\
+                StoreMemReg($ebp$,$8$,$ecx$) $[ecx]$ \\
             } \tabularnewline
 
             mul($[ebp+4]$,$[ebp+4]$,$[ebp+4]$)
             & &
             {
-                LoadMemReg($eax$, $[ebp+4]$) \\
-                Times($eax$, $eax$, $eax$) \\
-                StoreMemReg($ebp$,$4$,$eax$) \\
+                LoadMemReg($eax$, $[ebp+4]$) $[eax]$ \\
+                Times($eax$, $eax$, $eax$) $[eax]$ \\
+                StoreMemReg($ebp$,$4$,$eax$) $[eax]$ \\
             } \tabularnewline
             \end{tabular}
         }
         \caption{Example of compiling statements to gadgets with explicit memory
-        accesses.}
+        accesses. The registers in square brackets correspond to registers that
+        are not allowed to be clobbered while translating that gadget.}
         \label{fig:method-direct-to-gadget}
     \end{figure}
 
@@ -428,7 +469,7 @@
     \subsection{Edge Cases}
 
     The above works well for most types of gadgets but there are several edge
-    cases that require further optimizations to make the engine practical.  The
+    cases that require further optimizations to make the engine practical. The
     first is the assignment of constants to variables and the second is forward
     jumps.
 
@@ -486,21 +527,21 @@
             sub($[ebp+4]$,$[ebp+4]$,$1$) \\
             add($[ebp+4]$,$[ebp+4]$,$1$)
             & &
-            \parbox{2cm}{
-                \setlength{\unitlength}{.5cm}
-                \begin{picture}(3,3)
-                \thicklines
-                \put(.5,2.3){\line(0,-5){1}}
-                %\put(-2,0){\vector(1,0){1}}
-                \end{picture}
-            }
+%            \parbox{2cm}{
+%                \setlength{\unitlength}{.5cm}
+%                \begin{picture}(3,3)
+%                \thicklines
+%                \put(.5,2.3){\line(0,-5){1}}
+%                %\put(-2,0){\vector(1,0){1}}
+%                \end{picture}
+%            }
 
             \tabularnewline
             \end{tabular}
         }
         \caption{Example of compiling statements to gadgets with explicit memory
         accesses.}
-        \label{fig:method-direct-to-gadget}
+        \label{fig:method-forward-jump}
     \end{figure}
 
     The proposed method of resolving the circular dependency is to perform
@@ -526,41 +567,41 @@
     bytes, but it does not handle linking or any of the other requirements of
     generating actual executables.
 
-    \begin{figure}
-        \begin{vcode}
-    .file "filename.igor"
-    
-    .LC_method:
-        .text
-        .globl    _method
-    _method:
-    .LFB_method:
-        push    %ebp
-        push    %edi
-        push    %esi
-        push    %ebx
-        mov    %esp, %ebp
-        sub    localVarSize, %esp
-        .byte  bytesForBody
-        add    localVarSize, %esp
-        pop    %ebx
-        pop    %esi
-        pop    %edi
-        pop    %ebp
-        ret
-    .LFE_method:
-        \end{vcode}
-        \caption[Example of hand written scaffolding.]{Example of hand written scaffolding for bootstrapping a method
-        that has been compiled to byte code.}
-        \label{tab:method-statements}
-    \end{figure}
+%    \begin{figure}
+%        \begin{vcode}
+%    .file "filename.igor"
+%    
+%    .LC_method:
+%        .text
+%        .globl    _method
+%    _method:
+%    .LFB_method:
+%        push    %ebp
+%        push    %edi
+%        push    %esi
+%        push    %ebx
+%        mov    %esp, %ebp
+%        sub    localVarSize, %esp
+%        .byte  bytesForBody
+%        add    localVarSize, %esp
+%        pop    %ebx
+%        pop    %esi
+%        pop    %edi
+%        pop    %ebp
+%        ret
+%    .LFE_method:
+%        \end{vcode}
+%        \caption[Example of hand written scaffolding.]{Example of hand written scaffolding for bootstrapping a method
+%        that has been compiled to byte code.}
+%        \label{tab:method-statements}
+%    \end{figure}
 
     As this is a proof of concept system and not intended for production use,
-    this implementation uses the following handwritten assembly code and tools
-    from the GNU Compiler Collection to create object files for each method, and
-    link them to form actual executables \cite{gcc}.
+    this implementation uses handwritten assembly code and tools from the GNU
+    Compiler Collection to create object files for each method, and link them to
+    form actual executables \cite{gcc}.
 
     This approach is ideal as it allows for easy inspection of the generated
     code in the object files, along with providing a mechanism for linking
-    generated methods against $C$ code to facilitate unit testing.
+    generated methods against C code to facilitate unit testing.
 

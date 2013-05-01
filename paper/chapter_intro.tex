@@ -1,47 +1,59 @@
 \chapter{Introduction}
 
-    Malware and security research is often framed as a back and forth exchange
-    between ``white hat'' researchers and antivirus vendors on one side and
-    ``black hat'' malware authors on the other. Malware authors write malicious
-    programs which infect machines of unsuspecting users and perform various
-    nefarious acts such as sending spam, or spying on the user's activity. In
-    response an entire antimalware industry has sprung up centered around
-    protecting users from malicious programs.
+    The term malware describes a broad class of programs that perform malicious
+    activities without the consent of the user. Examples of such activities
+    include hosting illicit content, displaying ads, sending spam, and spying on
+    user activity. 
+%    Programs in this class include computer viruses and worms
+%    which infect machines without user consent, and Trojans which claim to
+%    perform one a benign task while actually or additionally performing
+%    nefarious tasks.
+    To protect users from these types of malicious programs, an
+    entire industry has developed centered around detecting and analyzing
+    malware.
 
-    Current commercial antivirus software largely relies on static detection
-    techniques to classify malware. The most common static technique is
-    byte signature matching where each vendor maintains a database of signatures
-    for every piece of malware that has ever been identified. Classification is
-    done by comparing the bytes in a sample file against the signatures in the
-    database, if there is a match then the sample is classified as malicious.
+    Malware research is often framed as a back and forth battle between
+    antivirus vendors and malware authors. Vendors create systems that detect
+    and prevent the execution of malware, and in response malware authors create
+    more sophisticated systems that are able to evade detection. In response to
+    the new types of malware, vendors research and deploy new detection
+    techniques and the cycle repeats ad infinitum. 
 
-    In response to this technique, malware authors created malware that was
-    capable of altering it's appearance itself each time it infecting a new
+    Currently, commercial antivirus software largely relies on what is known as
+    static detection techniques, the most common being byte signature matching.
+    In this system, each vendor maintains a database of signatures for every
+    piece of malware that has ever been identified. Classification is done by
+    comparing the bytes in a sample file against the signatures in the database,
+    if there is a match then the sample is classified as malicious.
+
+    To thwart byte signature based techniques, malware authors create malware
+    that is capable of altering it's appearance every time it infects a new
     host. The methods used to perform this obfuscation have become more and more
-    complex over time, ranging from simple encryption of the malware, to
-    executing the malware in custom virtual machines. As obfuscation techniques
-    became more advanced the appearance of obfuscated malware diverged from
-    benign programs. Which led to a current branch of research in malware
-    detection which has shown that obfuscated malware can be detected by
-    comparing the byte and opcode distributions to benign programs.
+    complex over time, ranging from simple encryption schemes, to executing the
+    malware logic in custom virtual machines. An unintended result of
+    obfuscation is that the byte level appearance of malware has diverged from
+    that of benign programs. This observation spawned a current branch of
+    research in malware detection which has shown that obfuscated malware can be
+    detected by comparing the malware's byte and opcode distributions to those
+    of benign programs.
 
     As malware authors develop increasingly complex methods of obfuscating their
-    programs antivirus vendors must in turn create sophisticated methods of
+    programs, antivirus vendors must in turn create sophisticated methods of
     detection. Unfortunately for vendors, there is a theoretical bound on the
     efficiency of a robust static classification system\cite{npcomplete}. To
     demonstrate the need for the inclusion of dynamic detection techniques, this
     paper presents a metamorphic system capable of producing semantically
-    equivalent programs which exhibit a high degree of variation in their
-    byte signatures while at the same time remaining statistically similar to
-    benign programs.
+    equivalent programs which exhibit a high degree of variation in their byte
+    signatures while at the same time remaining statistically similar to benign
+    programs.
 
-    This engine is able to achieve this by re-framing malware obfuscation as a
-    combined compiler and search problem. The engine takes a semantic blue print
-    of a program and then pieces together blocks of random bytes to create a
-    working executable. By controlling the distribution of the random bytes used
-    to generate the executable, the engine is able to influence statistical
-    properties of the resulting executables. The engine is able to achieve a
-    high degree of variation in byte signatures by making the process
-    nondeterministic which causes each of the programs generated are composed of
-    different blocks bytes.
+    This engine achieves this by re-framing malware obfuscation as a combined
+    compiler and search problem. Given a semantic blue print of a program the
+    engine pieces together blocks of random bytes to create a working
+    executable. By controlling the distribution of the random bytes used to
+    generate the executable, the engine is able to influence statistical
+    properties of the resulting executables. To achieve the high degree of
+    variation necessary to evade byte signature detection, the process of
+    piecing together and choosing random bytes is performed
+    nondeterministically.
 

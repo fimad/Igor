@@ -46,44 +46,42 @@
     \subsection{Functional Equivalence of Byte-strings}
     \label{sec:results-gadget-inst-eq}
 
-        %TODO: This section still needs some work
-
         The guarantee of functional equivalence of byte-strings for a
         particular gadget in the library is a direct result of the
         conservative design of both the abstract evaluator and the gadget
         discovery algorithm.
 
-        The abstract evaluator only successfully evaluates \emph{x86}
-        instructions that have a deterministic effect on the execution state.
-        Meaning that the resulting state of every hardware
-        location\footnote{Hardware locations are defined as registers, flags and
-        memory addresses.} can be described algebraically\footnote{Without the
-        use of conditional operators.} in terms of the original values of the
-        hardware locations prior to execution. Examples of states that cannot be
-        represented in this model include the effect of instructions following a
-        conditional branch, and any sequence of instructions that perform
-        multiple indirect writes to memory.
+        The abstract evaluator only successfully evaluates $x86$ instructions
+        that have a deterministic effect on the execution state.  Meaning that
+        the resulting state of every hardware location\footnote{Hardware
+        locations are defined as registers, flags and memory addresses.} can be
+        described algebraically, without the use of conditional operators, in
+        terms of the original values of the hardware locations prior to
+        execution. Examples of states that cannot be represented in this model
+        include the effect of instructions following a conditional branch, and
+        any sequence of instructions that perform multiple indirect writes to
+        memory.
 
         Confining the space of allowed execution states in this manner allows
         the resulting execution state to be represented as a collection of
         algebraic expression trees, with exactly one tree for each modified
         location. Matching bytes to gadgets is done by attempting to match one
-        the resulting expression trees to the general trees defined for each
-        class of gadget. This leaves the effects of the expression trees not
-        included in the match unaccounted for. To remedy this, the location
-        whose value corresponds to each unmatched tree is recored in the clobber
-        set.
+        of the resulting expression trees to the general trees defined for each
+        class of gadget. Simply matching a byte-string to a gadget does not
+        account the effects of the expression trees not included in the match.
+        To remedy this, the locations whose values correspond to each unmatched
+        tree is recored in the ``clobber set''.
 
         The intent is that the only side effects of a gadget is the overwriting
         of the locations in its clobber set. In order to guarantee this,
         restrictions are be placed on the expression trees of the locations
         placed in the clobber set. Because the expression trees only include
         algebraic operators, there is no possibility that evaluating a tree will
-        result in a write to another location. Therefore the only potential
-        side effects are indirect ones caused by situations like division by
-        zero or accessing unmapped memory. To prevent these indirect side
-        effects, locations in the clobber set are not allowed to have
-        expressions that contain any memory accesses or the division operator.
+        result in a write to another location. Therefore the only potential side
+        effects are indirect ones caused by exceptions like division by zero or
+        accessing unmapped memory. To prevent these indirect side effects,
+        locations in the clobber set are not allowed to have expressions trees
+        that contain any memory accesses or the division operator.
 
     \subsection{Gadget/Statement Equivalence \& Irrelevance of Specific Registers}
 
@@ -268,7 +266,7 @@
     similarity metric.
     
     To understand why the ``Frankenstein'' approach outperforms the proposed
-    approach, consider that the proposed approach makes use of a uni-gram byte
+    approach, consider that the proposed approach makes use of a unigram byte
     model to model the distribution of opcodes in normal programs. As such, it
     does not fully capture the dependencies between bytes that occur in
     instructions that span more than one byte. Therefore it is logical that the
@@ -357,12 +355,11 @@
     calculated $X^2$ is less than the p-value then the hypothesis is
     accepted.
 
-    In general the degrees of freedom is equivalent to one minus the number
-    of categories, in this case it is $559$ which corresponds to one less
-    than the number of unique opcodes in the \emph{x86} instruction space
-    recognized by our disassembler. The false positive rate generally
-    accepted as statistically significant and suggested by \cite{chisquared}
-    is $0.05$.
+    In general the degrees of freedom is equivalent to one minus the number of
+    categories, in this case it is $559$ which corresponds to one less than the
+    number of unique opcodes in the $x86$ instruction space recognized by our
+    disassembler. The false positive rate generally accepted as statistically
+    significant and suggested by \cite{chisquared} is $0.05$.
 
     \begin{figure}[t!]
         \makebox[\textwidth][c]{ \includegraphics[width=1.10\textwidth]{chart_x2.png} }

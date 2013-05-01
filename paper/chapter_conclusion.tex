@@ -3,11 +3,11 @@
     Commercial antivirus software has historically relied on static techniques
     to detect instances of malware in the wild. Typical implementations rely on
     byte signatures to detect malicious programs. An active area of research is
-    creating robust detection techniques which are able to cope with metamorphic
-    malware which is capable of obfuscating it's byte signature. An emerging
-    static technique that has shown academic success is using knowledge of the
-    structure of benign programs to classify malware, a prominent example of
-    this being opcode frequency analysis \cite{chisquared}.
+    creating robust detection techniques capable of coping with metamorphic
+    malware which is able to obfuscate its byte signature. An emerging static
+    technique that has shown academic success uses knowledge of the structure of
+    benign programs to classify malware. A prominent example of this is opcode
+    frequency analysis \cite{chisquared}.
 
     The metamorphic system presented in this paper is shown to be capable of
     producing programs that exhibit a high degree of variation in their
@@ -18,37 +18,37 @@
     to conforming to benign opcode distributions.
 
     Further, this paper has also provided empirical support for the claim made
-    in \cite{franken} that suggest that when nondeterministically stitching
+    in \cite{franken} that suggests that when nondeterministically stitching
     together a program out of gadgets, the resulting program's overall opcode
-    distribution can be controlled by altering the distribution that the gadgets
-    are sampled from.
+    distribution can be controlled by altering the distribution of bytes that
+    the gadgets are sampled from.
 
     By achieving high levels byte signature variance and opcode frequency
     conformity the described engine demonstrates that it is currently feasible
     for malware authors to evade both the current algorithms and emerging static
-    detection techniques. Given the high degree of obfuscation that state of the
-    art metamorphic systems are able to produce, antivirus software must move
-    from a statically oriented approach to one that incorporates behavioural
-    analysis as well if vendors wish to keep up with evolving metamorphic
-    techniques.
+    detection techniques. This high degree of obfuscation that state of the art
+    metamorphic systems are able to produce gives weight to the argument that if
+    vendors wish to keep up with evolving metamorphic techniques the industry
+    must move from a statically oriented approach to one that incorporates
+    behavioural analysis as well.
 
     \section{Future Work}
 
-    The system described is a proof of concept and as such contains many areas
-    that would benefit from further research.
+    The system described in this paper is a proof of concept and as such
+    contains many areas that would benefit from further investigation.
 
     \subsection{Improvements In Modelling Benign Programs}
 
-    The byte source proposed by this paper uses a 1-gram byte model to describe
+    The byte source proposed by this paper uses a unigram byte model to describe
     byte distributions and is a trivial improvement over the naive approach of
-    sampling gadgets from a uniform distribution. It would be useful to examine
-    the performance of the engine under more complicated models such as general
-    n-gram models, and models based on opcodes frequencies instead of byte
-    frequencies.
+    sampling gadgets from a uniform distribution. It would be beneficial to
+    examine the performance of the engine under more complicated models such as
+    general n-gram models, and models based on opcodes frequencies rather than
+    byte frequencies.
 
     There is also the potential of incorporating the model into the code
     generation algorithm by choosing gadgets based on their probability instead
-    of uniformly choosing them currently.
+    of the current approach of uniformly randomly choosing them.
 
     \subsection{Code Generation}
 
@@ -58,11 +58,12 @@
     register allocation\cite{register-coloring}.
 
     Others require more specialized algorithms. This paper presents a novel
-    approach to generating constants not found in the gadget library that
+    approach for generating constants not found in the gadget library that
     achieves reasonable performance at the cost of variability. A more general
-    approach would be desirable in a mature system.
+    approach that does not sacrifice variability would be desirable in a mature
+    system.
 
-    \subsection{Evaluator}
+    \subsection{Abstract Evaluator}
 
     Building a large library of gadgets that covers a wide range of operations
     is necessary to create complex programs. The current implementation handles
@@ -72,7 +73,7 @@
 
     Similarly, in order to take full advantage of the supported opcodes, the
     evaluator would need to handle semantically equivalent buy syntacticly
-    different expressions, e.g. $(1+1)*eax = (eax+eax)$.
+    distinct expressions, e.g. $(1+1)*eax = 2*eax = (eax+eax)$.
 
 %    \subsection{Analysis}
 %

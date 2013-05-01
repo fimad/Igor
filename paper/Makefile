@@ -11,11 +11,12 @@ paper.pdf: \
 	chapter_method.tex \
 	chapter_results.tex \
 	chapter_conclusion.tex \
+	appendix_test_programs.tex \
 	annbib.bib
 
 all: paper.pdf
 
-#Hack to get the current date in latex, to make sure that the date is up to date
+#Hack to get the current date in latex. To make sure that the date is up to date
 #run `make clean` before building
 date.tex:
 	date "+%B %d, %Y" | sed -r 's/^(.+)$$/\\date{\1}/g' > date.tex

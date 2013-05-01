@@ -432,7 +432,8 @@
             } \tabularnewline
             \end{tabular}
         }
-        \caption{Example of compiling statements to gadgets with explicit memory
+        \caption[Example of compiling statements to gadgets with explicit memory
+        accesses.]{Example of compiling statements to gadgets with explicit memory
         accesses. The registers in square brackets correspond to registers that
         are not allowed to be clobbered while translating that gadget.}
         \label{fig:method-direct-to-gadget}
@@ -520,27 +521,31 @@
         \centering
         \makebox[\textwidth][c]{
             \begin{tabular}{LcL}
-                Statements & & \\
-            \hline
-
+%                Statements & & \\
+%            \hline
+%
             jump(2,$always$)  \\
             sub($[ebp+4]$,$[ebp+4]$,$1$) \\
             add($[ebp+4]$,$[ebp+4]$,$1$)
             & &
-%            \parbox{2cm}{
-%                \setlength{\unitlength}{.5cm}
-%                \begin{picture}(3,3)
-%                \thicklines
-%                \put(.5,2.3){\line(0,-5){1}}
-%                %\put(-2,0){\vector(1,0){1}}
-%                \end{picture}
-%            }
+            \parbox{2cm}{
+                \setlength{\unitlength}{.5cm}
+                \begin{picture}(5,5)
+                \thicklines
+                \put(.5,3.5){\line(0,-1){2}}
+                \put(-4,3.5){\line(1,0){4.5}}
+                \put(.5,1.5){\vector(-1,0){1.5}}
+                %\put(-2,0){\vector(1,0){1}}
+                \end{picture}
+            }
 
             \tabularnewline
             \end{tabular}
         }
-        \caption{Example of compiling statements to gadgets with explicit memory
-        accesses.}
+        \caption[Example of a sequence of statements that contain a forward
+        jump.]{Example of a sequence of statements that contain a forward
+        jump. Note that this sequence is not translatable using a naive single
+        pass algorithm.}
         \label{fig:method-forward-jump}
     \end{figure}
 
@@ -604,4 +609,3 @@
     This approach is ideal as it allows for easy inspection of the generated
     code in the object files, along with providing a mechanism for linking
     generated methods against C code to facilitate unit testing.
-

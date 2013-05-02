@@ -6,6 +6,8 @@
 
 paper.pdf: \
 	date.tex \
+	abstract.tex \
+	acknowledgment.tex \
 	chapter_intro.tex \
 	chapter_related.tex \
 	chapter_method.tex \

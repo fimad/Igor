@@ -19,11 +19,11 @@
     dealing with potentially malicious programs, as in the case of malware
     analysis, it is common practice is to run it in a sandboxed or emulated
     environment. Dynamic analysis covers techniques that include computing a
-    live trace of instructions a program executes and anomaly detection which
-    monitors a program interaction with the host for behaviour that deviates
-    from normal program behaviour for some definition of normal. Sequences of
-    syscalls or the api calls made over the lifetime of a program has been shown
-    to be a good model of program behaviour \cite{api_calls}.
+    live trace of the instructions a program executes and anomaly detection
+    which monitors a program interaction with the host for behaviour that
+    deviates from normal program behaviour for some definition of normal.
+    Sequences of syscalls or the api calls made over the lifetime of a program
+    has been shown to be a good model of program behaviour \cite{api_calls}.
 
     Due to modern commercial anti-virus software's reliance on static analysis,
     a large portion of the evasion efforts staged by malware authors have been
@@ -125,13 +125,13 @@
     return-oriented programming.
 
     Classic examples of buffer overflow attacks involve the attacker overflowing
-    a buffer allocated on the stack filling it with instructions that will spawn
-    a shell \cite{aleph}. The portion of the content copied into the buffer that
-    overwrites the return address of the stack frame contains an address that
-    points into the overrun buffer. The result is that when the current function
-    exits by executing the ``ret'' instruction, control will pass to the
-    injected code thus giving the attacker the ability to execute arbitrary
-    code.
+    a buffer allocated on the stack, filling it with instructions that will
+    spawn a shell \cite{aleph}. The portion of the content copied into the
+    buffer that overwrites the return address of the stack frame contains an
+    address that points into the overrun buffer. The result is that when the
+    current function exits by executing the ``ret'' instruction, control will
+    pass to the injected code thus giving the attacker the ability to execute
+    arbitrary code.
 
     Since the publication of \cite{aleph} there have been several advances that
     make classic buffer overflows much more difficult to execute. One of the

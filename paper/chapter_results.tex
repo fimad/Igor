@@ -113,19 +113,17 @@
         to the results is placed back into the abstract location through a
         \emph{StoreMemReg} gadget.
         
-        Temporary registers are allocated for the duration of the
-        statement's execution and are temporarily removed from the pool of
-        unallocated general registers. When translating gadgets into
-        concrete bytes, only those instances whose clobber list is a subset
-        of the current unallocated register pool are considered valid
-        translations. Because the side-effects of gadgets are limited to
-        altering values in unallocated general purpose registers, the
-        observable\footnote{An observable effect being one that alters the
-        value of an allocated temporary register, the value of a memory
-        location, or altering the instruction pointer} effect on the
-        execution state can be described by the pre/post-conditions of the
-        sequence of gadgets, which is by definition the semantics of the
-        statement.
+        Temporary registers are allocated for the duration of the statement's
+        execution and are temporarily removed from the pool of unallocated
+        general registers. When translating gadgets into concrete bytes, only
+        those instances whose clobber list is a subset of the current
+        unallocated register pool are considered valid translations. Because the
+        side-effects of gadgets are limited to altering values in unallocated
+        general purpose registers, the observable\footnote{An observable effect
+        being one that alters the value of an allocated temporary register, the
+        value of a memory location, or altering the instruction pointer} effect
+        on the execution state can be described by the core semantics and the
+        clobber sets of the sequence of gadgets.
     
 \section{Test Suite}
 
@@ -198,10 +196,10 @@
         \makebox[\textwidth][c]{ \includegraphics[width=1.10\textwidth]{chart_lcs.png} }
         \vspace{-50pt}
         \caption[Graph of variation between generated programs]
-        {Similarity scores for the each combination of test program
-        and gadget library. Lower scores are more desirable, a score of $1$
-        indicates that the programs are identical, while $0$ indicates that
-        there is no overlap.}
+        {Similarity scores for each combination of test program and gadget
+        library. Lower scores are more desirable, a score of $1$ indicates that
+        the programs are identical, while $0$ indicates that there is no
+        overlap.}
         \label{tab:results-different}
     \end{figure}
 %%        \begin{table}
@@ -238,7 +236,7 @@
     generated samples. The resulting scores are shown in
     figure~\ref{tab:results-different}. The proposed method of sampling from an
     observed byte distribution clearly out performs the naive approach, but
-    doesn't perform as well as the approach given in ``Frankenstein''
+    doesn't perform as well as the approach given in the ``Frankenstein''
     paper\cite{franken}.
 
     To understand why the proposed approach doesn't perform as well as the
@@ -246,7 +244,7 @@
     the naive approach.
     
     In order for a given sequence of instructions to be placed in the gadget
-    library they must interpretable by the abstract evaluator, which is only
+    library they must be interpretable by the abstract evaluator, which is only
     capable of evaluating some of the most common $x86$ instructions. Under the
     naive scheme, bytes are sampled from a uniform distribution. Considering
     that common instructions are typically shorter than rare instructions it
@@ -257,13 +255,13 @@
 
     By biasing the probability of specific bytes from being generated, the
     proposed approach of sampling bytes effectively increases the likelihood of
-    common, and thus interpretable, instructions being generated. Therefore
-    the likelihood of generating a sequence of interpretable instructions is
-    greater than the naive approach, which in turn leads to longer gadgets in
-    the library. The reason that longer gadgets lead to a better similarity
-    score is that there are more opportunities for junk instructions to be
-    placed in the resulting executable thus increasing the denominator of the
-    similarity metric.
+    common, and thus interpretable, instructions being generated. Therefore the
+    likelihood of generating a sequence of interpretable instructions is greater
+    than the naive approach, which in turn leads to longer gadgets in the
+    library. The reason that longer gadgets lead to a better similarity score is
+    that there are more opportunities for junk instructions to be placed in the
+    resulting executable thus increasing the denominator of the similarity
+    metric and improving the score.
     
     To understand why the ``Frankenstein'' approach outperforms the proposed
     approach, consider that the proposed approach makes use of a unigram byte
@@ -271,9 +269,9 @@
     does not fully capture the dependencies between bytes that occur in
     instructions that span more than one byte. Therefore it is logical that the
     proposed method is not as likely to generate common instructions as directly
-    sampling from the actual binaries as the ``Frankenstein'' does. This
-    suggests that a useful avenue of future would be investigating the
-    efficiency of more complicated models, such as more general $n$-gram models.
+    sampling from the actual binaries as the ``Frankenstein'' system does. This
+    suggests that a useful avenue of future research would be investigating the
+    efficacy of more complicated models, such as more general $n$-gram models.
 
 \section{Appearing Normal}
 
@@ -323,11 +321,11 @@
     distributions has a strong precedent in literature
     \cite{chisquared,hmm_evade,stat_model,fileprints}. The basis for our
     evaluation is the classification system described in \cite{chisquared}
-    because it presents a simple and concise metric that produces as a
-    real-valued score representing how likely a sample is to be malware as a
-    opposed to a binary classification. The system uses Pearson's chi-squared
-    test for goodness of fit to measure the likelihood that a file under
-    consideration belongs to a particular family of programs.
+    because it presents a simple and concise metric that produces a real-valued
+    score representing how likely a sample is to be malware as a opposed to a
+    binary classification. The system uses Pearson's chi-squared test for
+    goodness of fit to measure the likelihood that a file under consideration
+    belongs to a particular family of programs.
 
     Pearson's chi-squared test for goodness of fit tests the hypothesis that
     an observed frequency distribution matches a given theoretical
@@ -411,12 +409,12 @@
     Examination of the generated executables suggests that the high density of
     cooperating common instructions in normal executables that contributed to
     the ``Frankenstein'' system success in the previous test causes it to fail
-    in this test. Note that in table~\ref{tab:results-opcode-dist}, the first 3
-    instructions occur with significantly more frequency than the following most
-    common instructions. By promoting more junk instructions to be included in
-    gadgets, the ``Frankenstein'' system increases the likelihood of less common
-    instructions appearing in gadgets that correspond to more likely
-    instructions. This could lead to inflation in the counts for the less
+    in this scenario. Note that in table~\ref{tab:results-opcode-dist}, the
+    first 3 instructions occur with significantly more frequency than the
+    following most common instructions. By promoting more junk instructions to
+    be included in gadgets, the ``Frankenstein'' system increases the likelihood
+    of less common instructions appearing in gadgets that correspond to more
+    likely instructions. This could lead to inflation in the counts for the less
     frequent instruction which would increase the chi-squared score signalling
     that the executable is less likely to be benign.
 

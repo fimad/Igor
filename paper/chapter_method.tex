@@ -24,12 +24,12 @@
     For instance, the requirement that a gadget end in a return statement is
     necessary in return-oriented programming because that is the mechanism
     through which gadgets can be composed. However, given that this engine
-    directly generate the text section of an executable this requirement is no
+    directly generates the text section of an executable this requirement is no
     longer necessary.
 
     Therefore, it is useful to re-formalize gadgets in the context where they
     are free of the constraints imposed by return-oriented programming. For the
-    purposes of this engine, gadgets are defined as a byte string and a
+    purposes of this engine, gadgets are defined as a byte string and
     corresponding semantics given as a symbolic description of the effect on the
     execution state the byte string would have upon execution.
 
@@ -203,7 +203,7 @@
     both the naive approach and the approach proposed in \cite{franken}. In
     addition, there is also the additional benefit that since the distribution
     is calculated in advance, it is no longer tied to the host architecture,
-    which opens the door for cross-platform code generation.
+    which further eases cross-platform code generation.
 
     \subsection{Symbolic Evaluation}
 
@@ -254,7 +254,7 @@
 
     Each type of gadget recognized by the engine has a corresponding general
     state tree that describes it's core semantics. Examples of what these state
-    trees look like are given in table~\ref{tab:method-general-trees}. The wild
+    trees look like are given in figure~\ref{fig:method-general-trees}. The wild
     card nodes are constrained to only match the leaf nodes which correspond to
     the parameters of the gadget types described above.
 
@@ -364,6 +364,7 @@
         \centering
         \makebox[\textwidth][c]{
             \begin{tabular}{lcl}
+            \hline
             Statements & & Gadgets \\
             \hline
             move($[ebp+8]$,$10$)
@@ -405,6 +406,7 @@
         \centering
         \makebox[\textwidth][c]{
             \begin{tabular}{lcL}
+            \hline
             Statements & Gadgets \tabularnewline
             \hline \\
             move($[ebp+8]$,$10$)
@@ -430,6 +432,7 @@
                 Times($eax$, $eax$, $eax$) $[eax]$ \\
                 StoreMemReg($ebp$,$4$,$eax$) $[eax]$ \\
             } \tabularnewline
+            \hline
             \end{tabular}
         }
         \caption[Example of compiling statements to gadgets with explicit memory
@@ -481,11 +484,11 @@
     for such a gadget to be found during the construction of the library it is
     necessary that a particular 32 bit value be present in the byte string at
     the correct offset. This is a very unlikely and it would also be impractical
-    to store each $2^{32}$ possible \emph{loadConst} gadget in the library. 
+    to store each $2^{32}$ possible \emph{LoadConst} gadget in the library. 
 
     A natural solution is to attempt to construct the equivalent of an
     \emph{LoadConst} gadget out of gadgets that exist in the library. There are
-    some caveats with this approach, however, namely that it is reminiscent of
+    some caveats with this approach however, namely that it is reminiscent of
     the subset sum problem\footnote{The subset problem aims to find a subset of
     a set of integer whose sum is equal to a target integer} which is
     NP-complete.
@@ -509,7 +512,8 @@
     problem arises because jump statements are written with relative offsets in
     terms of statements while gadgets have offsets expressed in bytes. This
     means that in order to resolve jump statements to gadgets it is necessary to
-    know the byte offset of the statement that the jump is trying to jump to.
+    know the byte offset of the statement that the jump is trying to pass
+    control to.
 
     This becomes a problem when dealing with code that attempts to jump forward,
     for example see the example code in figure~\ref{fig:method-forward-jump}.
@@ -562,8 +566,8 @@
     statement in the first phase and guesses a different size. The backtracking
     process also considers different statement to gadget and gadget to byte
     translations on the way back to re-translating the problematic jump. This
-    allows for the potential the target byte offset to changing without having
-    to throw away all of the translations after the problematic jump.
+    allows for the target byte offset to change without having to throw away all
+    of the translations after the problematic jump.
 
     \section{Scaffolding}
 

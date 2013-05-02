@@ -12,5 +12,5 @@ main = defineMethod "xorEnc" $ do
     label   loop
     xor     (W,current,0)       key                 (R,current,0)
     add     current             current             (4 :: Integer)
-    jump     loop                ( current -!=- arrayEnd )
+    jump    loop                ( current -!=- arrayEnd )
 

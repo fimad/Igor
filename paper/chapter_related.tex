@@ -1,6 +1,6 @@
 \chapter{Related Work}
 
-    Malware classification and more generally program analysis fall under two
+    Malware classification, and more generally program analysis, fall under two
     umbrella categories: static and dynamic analysis. Static methods analyze a
     program using only the byte level representation as information. Being able
     to statically analyze a program is obviously desirable in the context of
@@ -48,13 +48,14 @@
 
     This form of obfuscation has largely been defeated through the use of hybrid
     detection schemes that use aspects of both dynamic and static analysis
-    \cite{polyunpack}. In such schemes, the suspected malware is allowed to
-    execute in a sandboxed environment while the anti-virus program monitors
-    execution for behaviour characteristic of a packed program, e.g. passing
-    control to a section of memory marked as data. The monitoring program can
-    then dump the portion of memory that was jumped into, often times revealing
-    the entire unpacked contents of the malware. Once the unpacked contents of
-    the malware has been revealed it is then vulnerable to common byte signature
+    \cite{polyunpack,omniunpack,renovo}. In such schemes, the suspected malware
+    is allowed to execute in a sandboxed environment while the anti-virus
+    program monitors execution for behaviour characteristic of a packed program,
+    e.g. passing control to a section of memory marked as data. The monitoring
+    program can then dump the portion of memory that was jumped into, often
+    times revealing the entire unpacked contents of the malware. Once the
+    unpacked contents of the malware has been revealed it is then vulnerable to
+    common byte signature
     detection.
 
     The next generation of obfuscating malware, metamorphic malware, achieves
@@ -72,7 +73,7 @@
     shown to be NP-complete \cite{npcomplete}. Further, there are known methods
     of control flow obfuscation that make simply determining the control flow
     graph of a program NP-hard \cite{controlflow}. These proofs pertain to
-    static analysis and provides a bound on the ability to statically classify
+    static analysis and provide a bound on the ability to statically classify
     metamorphic malware. In practice however, there are static techniques being
     researched that have been shown to reliable classify modern metamorphic
     malware.
@@ -82,16 +83,17 @@
     generations of metamorphic malware differs significantly, as a whole they
     exhibit certain statistical characteristics that allow them to be
     identified. For instance, the opcode frequency distributions of metamorphic
-    variants has been shown to be relatively constant between variations. Opcode
-    histogram alone have been shown to be robust enough in some cases to
-    reliably classify real world metamorphic malware samples \cite{histogram}.
+    variants has been shown to be relatively constant between variations.
+    Comparing these opcode histograms have been shown to be robust enough in
+    some cases to reliably classify real world metamorphic malware samples
+    \cite{histogram}.
 
-    Another significant property exhibited by modern malware engines is that not
-    only do the executables they generate have certain statistical properties in
-    common, but they are also statistically very dissimilar from benign software
-    \cite{hmm_detect}. HMM-based classifiers that capitalize on this observation
+    In addition to failing to disguise certain commonalities, current
+    metamorphic engines have also been shown to introduce properties that
+    distinguish the generated malware from benign programs.
+    Hidden Markov model based classifiers that capitalize on this observation
     have been shown to be particularly successful in classifying metamorphic
-    malware.
+    malware \cite{hmm_detect}.
 
     Given this shortcoming with regard to statistical fingerprints in current
     metamorphic engines, recent work has explored creating metamorphic engines
@@ -121,7 +123,7 @@
     these engines scan benign executables to generate a database of repurposable
     code fragments from which subsequent generations of the program are pieced
     together \cite{franken}. The intellectual roots for this type of metamorphic
-    engine comes from a recently discovered shellcode execution attack known as
+    engine come from a recently discovered shellcode execution attack known as
     return-oriented programming.
 
     Classic examples of buffer overflow attacks involve the attacker overflowing
@@ -145,13 +147,13 @@
     this scenario, the attacker capitalizes on the fact that most programs are
     linked to libc, which contains functions that can be used to perform
     potentially malicious operations (notably the ``system'' method which
-    executes a string argument in a shell). When the attacker overruns a buffer
-    they are able to control the contents of the stack frame. In $x86$
-    architectures, the return address and function parameters are passed on the
-    stack. By specially crafting the contents of the stack, the attacker can set
-    the return address to the libc ``system'' method and place a malicious
-    command as the parameter thereby executing an arbitrary shell command when
-    the current function exits.
+    executes a string argument in a shell) \cite{rop_gep}. When the attacker
+    overruns a buffer they are able to control the contents of the stack frame.
+    In $x86$ architectures, the return address and function parameters are
+    passed on the stack. By specially crafting the contents of the stack, the
+    attacker can set the return address to the libc ``system'' method and place
+    a malicious command as the parameter thereby executing an arbitrary shell
+    command when the current function exits.
 
     Return oriented programming builds on the key idea seen in return to libc
     attacks of reusing existing instructions in a malicious manner. Return
@@ -167,13 +169,10 @@
     The ``Frankenstein'' metamorphic engine in \cite{franken} combines the
     principles of return oriented programming with the observation that programs
     statistically similar to benign programs are more difficult for static
-    analysis techniques to classify. The presented metamorphic systems builds a
-    collection of gadgets by scanning through a sampling of benign programs
-    found on the host. There are several simplifying assumptions that can be
-    made in the case of the metamorphic engine that cannot be made in standard
-    return-oriented programming. The most significant is that gadgets do not
-    need to return in a ``ret'' instruction for them to be useful. Given the
-    collection of discovered gadgets, metamorphic programs are written as
-    predicates which are then mapped to gadgets according to the gadgets
-    description of its effect on the system.
+    analysis techniques to classify. Their metamorphic system builds a
+    collection of repurposable code fragments by scanning through a selection of
+    all the available benign programs found on the host. Using these fragments,
+    the metamorphic system generates programs by taking a semantic blueprint of
+    the desired program and searching for sequences of fragments that fulfil
+    those semantics.
 

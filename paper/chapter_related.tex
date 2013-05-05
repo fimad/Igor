@@ -23,9 +23,9 @@
     which monitors a program interaction with the host for behaviour that
     deviates from normal program behaviour for some definition of normal.
     Sequences of syscalls or the api calls made over the lifetime of a program
-    has been shown to be a good model of program behaviour \cite{api_calls}.
+    have been shown to be a good model of program behaviour \cite{api_calls}.
 
-    Due to modern commercial anti-virus software's reliance on static analysis,
+    Due to modern commercial antivirus software's reliance on static analysis,
     a large portion of the evasion efforts staged by malware authors have been
     in the attempt to thwart byte signature detection by creating malware that
     obfuscates its byte signature for each host it infects.
@@ -49,7 +49,7 @@
     This form of obfuscation has largely been defeated through the use of hybrid
     detection schemes that use aspects of both dynamic and static analysis
     \cite{polyunpack,omniunpack,renovo}. In such schemes, the suspected malware
-    is allowed to execute in a sandboxed environment while the anti-virus
+    is allowed to execute in a sandboxed environment while the antivirus
     program monitors execution for behaviour characteristic of a packed program,
     e.g. passing control to a section of memory marked as data. The monitoring
     program can then dump the portion of memory that was jumped into, often
@@ -143,11 +143,11 @@
     attacker may be able to inject malicious code will have permissions set that
     disallow it from being run.
 
-    These measures spurred a new form of attack known as ``return to libc''. In
+    These measures spurred a new form of attack known as ``return to libc.'' In
     this scenario, the attacker capitalizes on the fact that most programs are
     linked to libc, which contains functions that can be used to perform
     potentially malicious operations (notably the ``system'' method which
-    executes a string argument in a shell) \cite{rop_gep}. When the attacker
+    executes a string argument in a shell) \cite{rop_geo}. When the attacker
     overruns a buffer they are able to control the contents of the stack frame.
     In $x86$ architectures, the return address and function parameters are
     passed on the stack. By specially crafting the contents of the stack, the

@@ -43,7 +43,7 @@
 
     \end{enumerate}
 
-    \subsection{Functional Equivalence of Byte-strings}
+    \subsection{Functional Equivalence of Byte-Strings}
     \label{sec:results-gadget-inst-eq}
 
         The guarantee of functional equivalence of byte-strings for a
@@ -68,17 +68,17 @@
         location. Matching bytes to gadgets is done by attempting to match one
         of the resulting expression trees to the general trees defined for each
         class of gadget. Simply matching a byte-string to a gadget does not
-        account the effects of the expression trees not included in the match.
-        To remedy this, the locations whose values correspond to each unmatched
-        tree is recored in the ``clobber set''.
+        account for the effects of the expression trees not included in the
+        match.  To remedy this, the locations whose values correspond to each
+        unmatched tree is recored in the ``clobber set.''
 
         The intent is that the only side effects of a gadget is the overwriting
         of the locations in its clobber set. In order to guarantee this,
-        restrictions are be placed on the expression trees of the locations
-        placed in the clobber set. Because the expression trees only include
-        algebraic operators, there is no possibility that evaluating a tree will
-        result in a write to another location. Therefore the only potential side
-        effects are indirect ones caused by exceptions like division by zero or
+        restrictions are placed on the expression trees of the locations placed
+        in the clobber set. Because the expression trees only include algebraic
+        operators, there is no possibility that evaluating a tree will result in
+        a write to another location. Therefore the only potential side effects
+        are indirect ones caused by exceptions like division by zero or
         accessing unmapped memory. To prevent these indirect side effects,
         locations in the clobber set are not allowed to have expressions trees
         that contain any memory accesses or the division operator.
@@ -136,11 +136,11 @@
     ``Frankenstein'', the naive approach of sampling bytes from a uniform
     distribution is referred to as ``Uniform Random'', and the proposed
     method of sampling bytes from the observed byte frequency distribution
-    of windows programs is referred to as ``Observed Random''.
+    of windows programs is referred to as ``Observed Random.''
 
     Three simple test programs are provided as seeds for the engine.
     Descriptions of the sample programs are given below, and the source code
-    for each is given in appendix~\ref{app:test-suite}. A
+    for each is given in Appendix~\ref{app:test-suite}. A
     collection of 100 programs was then generated for each combination of
     test program and gadget library.
     
@@ -222,12 +222,13 @@
 %%            \label{tab:results-different}
 %%        \end{table}
 %%
-    The similarity score between two methods is defined to be the percent of
-    the total opcodes among the two methods that are present in their longest
-    common subsequence. The formula is defined as follows, where
-    $A$ and $B$ are the lists of opcodes making up the two methods,
-    $LCS(A,B)$ is the length of their longest common subsequence, and $|A|$,
-    and $|B|$ are the length of $A$ and $B$:
+
+    The similarity score between two methods is defined to be the percent of the
+    total opcodes among the two methods that are present in their longest common
+    subsequence. The formula is defined as follows, where $A$ and $B$ are the
+    lists of opcodes making up the two methods, $LCS(A,B)$ is the length of
+    their longest common subsequence, and $|A|$ and $|B|$ are the length of $A$
+    and $B$:
 
     $$Sim(A,B) = \frac{LCS(A,B)}{|A| + |B| - LCS(A,B)}$$
 
@@ -237,7 +238,7 @@
     figure~\ref{tab:results-different}. The proposed method of sampling from an
     observed byte distribution clearly out performs the naive approach, but
     doesn't perform as well as the approach given in the ``Frankenstein''
-    paper\cite{franken}.
+    paper \cite{franken}.
 
     To understand why the proposed approach doesn't perform as well as the
     ``Frankenstein'' approach it is informative to consider why it out performs
@@ -408,15 +409,16 @@
 
     Examination of the generated executables suggests that the high density of
     cooperating common instructions in normal executables that contributed to
-    the ``Frankenstein'' system success in the previous test causes it to fail
+    the ``Frankenstein'' system's success in the previous test causes it to fail
     in this scenario. Note that in table~\ref{tab:results-opcode-dist}, the
-    first 3 instructions occur with significantly more frequency than the
-    following most common instructions. By promoting more junk instructions to
-    be included in gadgets, the ``Frankenstein'' system increases the likelihood
-    of less common instructions appearing in gadgets that correspond to more
-    likely instructions. This could lead to inflation in the counts for the less
-    frequent instruction which would increase the chi-squared score signalling
-    that the executable is less likely to be benign.
+    table of most frequent opcodes, the first 3 instructions occur with
+    significantly more frequency than the following most common instructions. By
+    promoting more junk instructions to be included in gadgets, the
+    ``Frankenstein'' system increases the likelihood of less common instructions
+    appearing in gadgets that correspond to more likely instructions. This could
+    lead to inflation in the counts for the less frequent instruction which
+    would increase the chi-squared score signalling that the executable is less
+    likely to be benign.
 
     %http://www.danielsoper.com/statcalc3/calc.aspx?id=12
     %293.24

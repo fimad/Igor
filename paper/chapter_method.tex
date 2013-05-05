@@ -27,14 +27,14 @@
     directly generates the text section of an executable this requirement is no
     longer necessary.
 
-    Therefore, it is useful to re-formalize gadgets in the context where they
-    are free of the constraints imposed by return-oriented programming. For the
-    purposes of this engine, gadgets are defined as a byte string and
+    Therefore, it is useful to reformalize gadgets in the context where they are
+    free of the constraints imposed by return-oriented programming. For the
+    purposes of this engine, gadgets are defined as a byte-string and
     corresponding semantics given as a symbolic description of the effect on the
-    execution state the byte string would have upon execution.
+    execution state the byte-string would have upon execution.
 
     To simplify the process of reasoning about a large collection of gadgets, a
-    given byte string is restricted to matching several of a collection of
+    given byte-string is restricted to matching several of a collection of
     predefined gadget types. A Turing complete set of gadget types is given in
     \cite{franken}, and serves as the basis for the gadget types in this
     implementation. Each type of gadget is parameterized over a list of hardware
@@ -72,20 +72,20 @@
     \end{table}
 
     Along with the core semantics presented in table~\ref{tab:method-gadgets},
-    each byte string also has an associated ``clobber set''. This set contains
+    each byte-string also has an associated ``clobber set.'' This set contains
     the set of hardware locations that the gadget overwrites in addition to
-    performing it's core semantics. Allowing gadgets to have limited
-    side-effects describable by this clobber set allows for junk
-    instructions to be present in the byte strings for any given gadget type.
-    This is a desirable feature for a metamorphic engine because it leads to
-    greater variety in the byte instances for each gadget type and through that
-    more variety in the generated programs. Concrete examples of gadgets along
-    with their clobber sets are shown in table~\ref{tab:method-clobber}.
+    performing its core semantics. Allowing gadgets to have limited side-effects
+    describable by this clobber set allows for junk instructions to be present
+    in the byte-strings for any given gadget type. This is a desirable feature
+    for a metamorphic engine because it leads to greater variety in the byte
+    instances for each gadget type and through that more variety in the
+    generated programs. Concrete examples of gadgets along with their clobber
+    sets are shown in table~\ref{tab:method-clobber}.
 
     \begin{table}
         \centering
         \makebox[\textwidth][c]{
-            \begin{tabular}{LLLL}
+            \begin{tabular}{TTTT}
                 \hline
                 Bytes & Instructions & Gadget Type & Clobber Set \tabularnewline
                 \hline\\
@@ -132,33 +132,37 @@
     Therefore to provide a more convenient programming experience it is
     necessary to be able to express program semantics using a higher level
     construct. The solution used in this implementation is ``abstract
-    statements''. Abstract statements, or simply statements, are similar to
+    statements.'' Abstract statements, or simply statements, are similar to
     gadgets in that the scope of operations they perform but abstract away the
-    hardware locations into variables. This divorces the program semantics from
-    the specific hardware that it will be running on, and opens the door for
-    cross-platform compilation.
+    hardware locations into variables. A full listing of the statements
+    supported by the engine is given in table~\ref{tab:method-statements}.
+    %By divorcing the expression of the program's semantics from the specific
+    %hardware that it will be running on, and opens the door for cross-platform
+    %compilation.
 
     \begin{table}
         \centering
-        \begin{tabular}{llL}
-            \hline
-            Gadget Type & Parameters & Gadget \tabularnewline
-            \hline
-            noop & --- & NoOp \tabularnewline
-            move & $out,in$ & $out \leftarrow in$ \tabularnewline
-            add & $out,in_1,in_2$ & $out \leftarrow in_1 + in_2$ \tabularnewline
-            sub & $out,in_1,in_2$ & $out \leftarrow in_1 - in_2$ \tabularnewline
-            mul & $out,in_1,in_2$ & $out \leftarrow in_1 \times in_2$ \tabularnewline
-            xor & $out,in_1,in_2$ & $out \leftarrow in_1 \oplus in_2$ \tabularnewline
-            jump & $label,reason$ & 
-            \[ eip \leftarrow
-                \begin{cases}
-                    eip + offset(label) & \text{if } eflag \& reason\\ 
-                    eip & otherwise 
-                \end{cases}
-            \] \tabularnewline
-            \hline
-        \end{tabular}
+        \makebox[\textwidth][c]{
+            \begin{tabular}{llL}
+                \hline
+                Statements & Parameters & Semantics \tabularnewline
+                \hline
+                noop & --- & --- \tabularnewline
+                move & $out,in$ & $out \leftarrow in$ \tabularnewline
+                add & $out,in_1,in_2$ & $out \leftarrow in_1 + in_2$ \tabularnewline
+                sub & $out,in_1,in_2$ & $out \leftarrow in_1 - in_2$ \tabularnewline
+                mul & $out,in_1,in_2$ & $out \leftarrow in_1 \times in_2$ \tabularnewline
+                xor & $out,in_1,in_2$ & $out \leftarrow in_1 \oplus in_2$ \tabularnewline
+                jump & $label,reason$ & 
+                \[ eip \leftarrow
+                    \begin{cases}
+                        eip + offset(label) & \text{if } eflag \& reason\\ 
+                        eip & otherwise 
+                    \end{cases}
+                \] \tabularnewline
+                \hline
+            \end{tabular}
+        }
         \caption[List of abstract statements.]
         {Enumeration of abstract statements and their semantic definitions. Note
         that parameters here are either variables or constants and that each
@@ -170,50 +174,48 @@
     \section{Gadget Discovery}
 
     In order to create programs out of these gadgets, it is first necessary to
-    actually find byte strings that match the described gadget types. Therefore
-    the first stage of the metamorphic engine is to pre-generate a large library
-    that maps from parameterized gadgets to byte strings that implement them.
+    actually find byte-strings that match the described gadget types. Therefore
+    the first stage of the metamorphic engine is to pregenerate a large library
+    that maps from parameterized gadgets to byte-strings that implement them.
 
     \subsection{Byte Source}
 
-    The first thing required to begin matching byte strings to gadgets and
+    The first thing required to begin matching byte-strings to gadgets and
     inserting them into the library is to determine where the bytes are going to
     come from. The method proposed by \cite{franken} is to scan the host
-    computer and read bytes from existing executables. This approach has the
-    desirable property that the bytes are being sampled from benign programs
-    which causes them to exhibit a similar frequency distribution.  There is a
-    fatal problem with this approach however, and that is that this approach
-    requires interaction with the host environment in a way that is easily
-    recognizable by behavioural detection systems due to it's uncommonly large
-    number of disk seeks \cite{anon_evade}.
+    computer and read bytes from existing executables. The assumption is that
+    because the gadgets are taken from existing executables, they share the same
+    byte frequency distribution. Unfortunately, there is a potentially fatal
+    flaw with this approach. This method of sampling bytes requires constant
+    interaction with the host environment and in the processes performs an
+    uncommonly large number of disk seeks. The result is that this process of
+    sampling bytes is susceptible to detection through behavioural analysis
+    \cite{anon_evade}.
 
-    A naive alternative to this approach would be to randomly generate bytes
-    from a uniform distribution. This solution has several beneficial
-    properties, namely there is no longer any interaction with the host
-    environment at all, and there is no longer a limited number of bytes that
-    may be sampled. Despite these niceties there is a significant downside to
-    this approach. The distribution that the bytes are being sampled from no
-    longer has any connection to the distribution of bytes found in benign
-    programs.
+    The naive alternative to this approach would be to randomly generate bytes
+    from a uniform distribution. This solution successfully eliminates the
+    suspicious behaviour of the previous approach. However, this benefit is
+    achieved at the cost that the bytes being sampled no longer have any
+    connection to the distribution of bytes found in benign programs.
 
-    A natural improvement to the naive approach is to pre-calculate the
+    A natural improvement to the naive approach is to precalculate the
     distribution of bytes found in benign programs and randomly sample bytes
     from this calculated distribution. This approach maintains all of the
     desirable benefits of the naive approach while avoiding the shortcomings of
     both the naive approach and the approach proposed in \cite{franken}. In
     addition, there is also the additional benefit that since the distribution
     is calculated in advance, it is no longer tied to the host architecture,
-    which further eases cross-platform code generation.
+    which opens the door to cross-platform code generation.
 
     \subsection{Symbolic Evaluation}
 
-    In order to match a given byte string with the various gadget types that it
+    In order to match a given byte-string with the various gadget types that it
     may implement, it is necessary to be able to represent the effect on
-    hardware that the execution of the byte string will have. Modelling the
-    effect on hardware is done by disassembling the byte string and symbolically
+    hardware that the execution of the byte-string will have. Modelling the
+    effect on hardware is done by disassembling the byte-string and symbolically
     evaluating the corresponding instructions in sequence. The result is a
     series of execution-state forests that represent the progressive effect on
-    hardware that executing the byte string would have.
+    hardware that executing the byte-string would have.
 
     Each state forest contains a tree for each altered hardware location. In
     turn, each tree in the forest is an expression tree where nodes are
@@ -313,14 +315,14 @@
         \label{fig:method-general-trees}
     \end{figure}
 
-    Matching a byte string and a corresponding sequence of instructions to
-    gadgets types is done by attempting to match each node of the gadget's
-    general tree with any tree in the byte string's state forest. The hardware
+    Matching a byte-string and a corresponding sequence of instructions to
+    gadget types is done by attempting to match each node of the gadget's
+    general tree with any tree in the byte-string's state forest. The hardware
     locations that correspond to the unmatched trees in the state forest make up
     the clobber set of the matched gadget.
 
     In order to ensure that the clobber set is able to entirely account for all
-    of the side effects of executing the byte string there are restrictions that
+    of the side effects of executing the byte-string there are restrictions that
     are placed on the unmatched expression trees which must be fulfilled for the
     match to be accepted. Namely, that the expression trees must be ``safe'' to
     execute regardless of the current execution state. To achieve this the
@@ -339,17 +341,17 @@
     In order to translate statements into gadgets it is necessary to first
     assign variables to hardware locations. This requires keeping track of which
     registers and memory locations are free and which have already been assigned
-    to variables. This paper uses a naive approach that assigns all local
+    to variables.  This paper uses a naive approach and assigns all local
     variables and method arguments as memory addresses offset from the
-    \emph{EBP} register. A fully mature implementation of this engine would use
-    a more efficient scheme and there is compiler literature to be drawn on
-    \cite{register-coloring}, \cite{register-iterate}, however the naive
-    approach is adequate for the purposes of demonstration.
-
+    \emph{EBP} register. There are more efficient variable mapping algorithms
+    \cite{register-coloring,register-iterate}, however adapting these techniques
+    to the nondeterministic nature of this engine is beyond the scope of this
+    paper.
+    
     Once a mapping of local variables to hardware locations has been determined
     it is possible for statements to be translated in to gadgets. Generating the
     bytecode code for each method can then be done by sequentially retrieving
-    byte strings from the gadget library for each gadget. 
+    byte-strings from the gadget library for each gadget. 
 
     \subsection{Variable Mapping \& Statement to Gadget Translation}
 
@@ -447,13 +449,13 @@
     \subsection{Gadget to Byte Translation}
 
     Translating bytes to gadgets is relatively straight forward in most cases
-    and can be accomplished by randomly selecting a byte string from the gadget
+    and can be accomplished by randomly selecting a byte-string from the gadget
     library for any encountered gadget.
 
-    The primary constraint is ensuring that the chosen byte string does not have
+    The primary constraint is ensuring that the chosen byte-string does not have
     any unintended side effects. Recall that effects on hardware that are
     outside the scope of the core semantic of a given gadget are allowed and
-    that such effects are encapsulated in each gadget's ``clobber set''. The
+    that such effects are encapsulated in each gadget's ``clobber set.'' The
     clobber set contains a set of hardware locations that will be in an
     undefined state after execution of the gadget.
 
@@ -463,7 +465,7 @@
     registers because in the creation of the gadget library memory accesses were
     disallowed from being present in the clobber set.
 
-    In the case that there are no byte strings available for a given gadget, the
+    In the case that there are no byte-strings available for a given gadget, the
     algorithm backtracks and tries another translation of the current statement
     using different temporary registers. If every combination of temporary
     registers is tried and a translation is still impossible, the algorithm
@@ -484,11 +486,11 @@
     The naive approach to gadget assignment would be to directly translate an
     assignment statement into a corresponding \emph{LoadConst} gadget. However,
     for such a gadget to be found during the construction of the library it is
-    necessary that a particular 32 bit value be present in the byte string at
+    necessary that a particular 32 bit value be present in the byte-string at
     the correct offset. This is a very unlikely and it would also be impractical
     to store each $2^{32}$ possible \emph{LoadConst} gadget in the library. 
 
-    A natural solution is to attempt to construct the equivalent of an
+    A natural solution is to attempt to construct the equivalent of a
     \emph{LoadConst} gadget out of gadgets that exist in the library. There are
     some caveats with this approach however, namely that it is reminiscent of
     the subset sum problem\footnote{The subset problem aims to find a subset of
@@ -557,17 +559,17 @@
     The proposed method of resolving the circular dependency is to perform
     compilation in two phase. During the first phase non-jump statements are
     translated into bytes as described above. However, when a jump gadget is
-    encountered, the size of its corresponding byte string is guessed and a
+    encountered, the size of its corresponding byte-string is guessed and a
     placeholder of the appropriate size that notes the target offset is
     generated. After which, following statements are compiled as above.
 
     After each statement has been translated into either bytes or place holders,
-    the second phase translates the place holders into appropriate byte strings.
+    the second phase translates the place holders into appropriate byte-strings.
     If there are no corresponding bytes for the gadget in the library, then the
     search backtracks potentially up to the translation of the problematic jump
     statement in the first phase and guesses a different size. The backtracking
     process also considers different statement to gadget and gadget to byte
-    translations on the way back to re-translating the problematic jump. This
+    translations on the way back to retranslating the problematic jump. This
     allows for the target byte offset to change without having to throw away all
     of the translations after the problematic jump.
 

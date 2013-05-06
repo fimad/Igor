@@ -20,7 +20,7 @@
     analysis, it is common practice is to run it in a sandboxed or emulated
     environment. Dynamic analysis covers techniques that include computing a
     live trace of the instructions a program executes and anomaly detection
-    which monitors a program interaction with the host for behaviour that
+    which monitors a program's interaction with the host for behaviour that
     deviates from normal program behaviour for some definition of normal.
     Sequences of syscalls or the api calls made over the lifetime of a program
     have been shown to be a good model of program behaviour \cite{api_calls}.
@@ -75,7 +75,7 @@
     graph of a program NP-hard \cite{controlflow}. These proofs pertain to
     static analysis and provide a bound on the ability to statically classify
     metamorphic malware. In practice however, there are static techniques being
-    researched that have been shown to reliable classify modern metamorphic
+    researched that have been shown to reliably classify modern metamorphic
     malware.
 
     The key observation that makes classifying current metamorphic malware
@@ -99,14 +99,14 @@
     metamorphic engines, recent work has explored creating metamorphic engines
     that are able to statistically blend in with benign applications. In some
     instances it has been shown that simply embedding whole subroutines taken
-    from benign applications randomly through out a malware sample is enough to
+    from benign applications randomly throughout a malware sample is enough to
     fool certain classifiers \cite{hmm_evade}.
 
     More sophisticated classification models that take into account the opcode
     instruction frequencies for the entire executable are more robust to these
     sorts of evasion tricks. Chi-squared tests have been shown to be more
-    sensitive to the frequency histograms and thus are more robust to the minor
-    alterations that occur when embedding portions of benign programs
+    sensitive to variations in opcode frequency and thus are more robust to the
+    minor alterations that occur when embedding portions of benign programs
     \cite{chisquared}.
 
     More recent advances in obfuscation have focused on altering the entire
@@ -131,7 +131,7 @@
     spawn a shell \cite{aleph}. The portion of the content copied into the
     buffer that overwrites the return address of the stack frame contains an
     address that points into the overrun buffer. The result is that when the
-    current function exits by executing the ``ret'' instruction, control will
+    current function exits by executing the \emph{ret} instruction, control will
     pass to the injected code thus giving the attacker the ability to execute
     arbitrary code.
 
@@ -146,28 +146,28 @@
     These measures spurred a new form of attack known as ``return to libc.'' In
     this scenario, the attacker capitalizes on the fact that most programs are
     linked to libc, which contains functions that can be used to perform
-    potentially malicious operations (notably the ``system'' method which
+    potentially malicious operations (notably the \emph{system} method which
     executes a string argument in a shell) \cite{rop_geo}. When the attacker
     overruns a buffer they are able to control the contents of the stack frame.
-    In $x86$ architectures, the return address and function parameters are
+    In x86 architectures, the return address and function parameters are
     passed on the stack. By specially crafting the contents of the stack, the
-    attacker can set the return address to the libc ``system'' method and place
+    attacker can set the return address to the libc \emph{system} method and place
     a malicious command as the parameter thereby executing an arbitrary shell
     command when the current function exits.
 
-    Return oriented programming builds on the key idea seen in return to libc
-    attacks of reusing existing instructions in a malicious manner. Return
-    oriented programming generalizes the idea by noting that because the return
-    address of a method is stored on the stack, and that the attacker can
+    Return-oriented programming builds on the key idea seen in return to libc
+    attacks of reusing existing instructions in a malicious manner.
+    Return-oriented programming generalizes the idea by noting that because the
+    return address of a method is stored on the stack, and that the attacker can
     control the contents of the stack, they can chain together code fragments
-    (gadgets) from the victim executable that end in a ``ret'' opcode. As each
-    code fragment ``returns'' the address of the next fragment is obtained from
-    the tainted stack frame. It has been shown that the libc library alone
+    (gadgets) from the victim executable that end in a \emph{ret} opcode. As
+    each code fragment ``returns'' the address of the next fragment is obtained
+    from the tainted stack frame. It has been shown that the libc library alone
     contains sufficient and varied gadgets to constitute a Turing complete
     system \cite{rop_geo}.
 
     The ``Frankenstein'' metamorphic engine in \cite{franken} combines the
-    principles of return oriented programming with the observation that programs
+    principles of return-oriented programming with the observation that programs
     statistically similar to benign programs are more difficult for static
     analysis techniques to classify. Their metamorphic system builds a
     collection of repurposable code fragments by scanning through a selection of

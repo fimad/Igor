@@ -39,7 +39,7 @@
     \cite{franken}, and serves as the basis for the gadget types in this
     implementation. Each type of gadget is parameterized over a list of hardware
     locations\footnote{Memory addresses and registers}. A complete listing of
-    gadgets and their definitions is given in table~\ref{tab:method-gadgets}.
+    gadgets and their definitions is given in Table~\ref{tab:method-gadgets}.
 
     \begin{table}
         \centering
@@ -71,16 +71,16 @@
         \label{tab:method-gadgets}
     \end{table}
 
-    Along with the core semantics presented in table~\ref{tab:method-gadgets},
+    Along with the core semantics presented in Table~\ref{tab:method-gadgets},
     each byte-string also has an associated ``clobber set.'' This set contains
     the set of hardware locations that the gadget overwrites in addition to
-    performing its core semantics. Allowing gadgets to have limited side-effects
+    performing its core semantics. Allowing gadgets to have limited side effects
     describable by this clobber set allows for junk instructions to be present
     in the byte-strings for any given gadget type. This is a desirable feature
     for a metamorphic engine because it leads to greater variety in the byte
     instances for each gadget type and through that more variety in the
     generated programs. Concrete examples of gadgets along with their clobber
-    sets are shown in table~\ref{tab:method-clobber}.
+    sets are shown in Table~\ref{tab:method-clobber}.
 
     \begin{table}
         \centering
@@ -133,9 +133,9 @@
     necessary to be able to express program semantics using a higher level
     construct. The solution used in this implementation is ``abstract
     statements.'' Abstract statements, or simply statements, are similar to
-    gadgets in that the scope of operations they perform but abstract away the
+    gadgets in the scope of the operations they perform but abstract away the
     hardware locations into variables. A full listing of the statements
-    supported by the engine is given in table~\ref{tab:method-statements}.
+    supported by the engine is given in Table~\ref{tab:method-statements}.
     %By divorcing the expression of the program's semantics from the specific
     %hardware that it will be running on, and opens the door for cross-platform
     %compilation.
@@ -167,7 +167,7 @@
         {Enumeration of abstract statements and their semantic definitions. Note
         that parameters here are either variables or constants and that each
         statement has a clear correspondence with a gadget in
-        \ref{tab:method-gadgets}}
+        Table~\ref{tab:method-gadgets}}
         \label{tab:method-statements}
     \end{table}
 
@@ -221,7 +221,7 @@
     turn, each tree in the forest is an expression tree where nodes are
     algebraic operations and leaves are the initial values of hardware
     locations. An example of a state forest is given in
-    figure~\ref{fig:method-state}.
+    Figure~\ref{fig:method-state}.
 
     \begin{figure}
         \centering
@@ -256,7 +256,7 @@
 
     Each type of gadget recognized by the engine has a corresponding general
     state tree that describes it's core semantics. Examples of what these state
-    trees look like are given in figure~\ref{fig:method-general-trees}. The wild
+    trees look like are given in Figure~\ref{fig:method-general-trees}. The wild
     card nodes are constrained to only match the leaf nodes which correspond to
     the parameters of the gadget types described above.
 
@@ -389,11 +389,11 @@
     \end{figure}
 
     Recall that in this implementation, gadgets correspond to short sequences of
-    $x86$ instructions typically on the order of 1-4 instructions long. Most
-    $x86$ instructions only operate on registers. If we were to naively
-    translate statements into a single gadget, the gadget would have to include
-    the instructions that load values from memory into registers and then if
-    applicable store the value back in memory. The odds of a random sequence of
+    x86 instructions typically on the order of 1-4 instructions long. Most x86
+    instructions only operate on registers. If we were to naively translate
+    statements into a single gadget, the gadget would have to include the
+    instructions that load values from memory into registers and then if
+    applicable store the value back in memory. The odds of a sequence of
     instructions cooperating in this manner appearing randomly is very small.
     Therefore to make search a practical method of code generation, it is
     necessary to prune search paths that are unlikely to be fruitful.
@@ -426,7 +426,7 @@
                 LoadMemReg($eax$, $[ebp+8]$) $[eax]$ \\
                 LoadMemReg($ebx$, $[ebp+16]$) $[eax,ebx]$ \\
                 Minus($ecx$, $eax$, $ebx$) $[eax,ebx,ecx]$ \\
-                StoreMemReg($ebp$,$8$,$ecx$) $[ecx]$ \\
+                StoreMemReg($ebp$,$4$,$ecx$) $[ecx]$ \\
             } \tabularnewline
 
             mul($[ebp+4]$,$[ebp+4]$,$[ebp+4]$)
@@ -504,7 +504,7 @@
     performs an arithmetic right shift of $32-n$ on this value to generate the
     desired constant.
 
-    The $x86$ shift instruction takes as an operand a $8$ bit number for the
+    The x86 shift instruction takes as an operand a $8$ bit number for the
     shift amount. This approach significantly improves the odds of successfully
     compiling an assignment statement to bytes because it relies on the odds of
     an $8$ bit and an $n$ bit number being generated independently rather than a
@@ -520,7 +520,7 @@
     control to.
 
     This becomes a problem when dealing with code that attempts to jump forward,
-    for example see the example code in figure~\ref{fig:method-forward-jump}.
+    for example see the example code in Figure~\ref{fig:method-forward-jump}.
     In order to know the byte offset of the target statement, the current
     statement must be compiled first which results in a circular dependency.
 
@@ -557,21 +557,21 @@
     \end{figure}
 
     The proposed method of resolving the circular dependency is to perform
-    compilation in two phase. During the first phase non-jump statements are
-    translated into bytes as described above. However, when a jump gadget is
-    encountered, the size of its corresponding byte-string is guessed and a
-    placeholder of the appropriate size that notes the target offset is
-    generated. After which, following statements are compiled as above.
+    compilation in two phases. During the first phase non-jump statements are
+    translated into bytes as described above. When a jump gadget is encountered,
+    the size of its corresponding byte-string is guessed and a placeholder of
+    the appropriate size that notes the target offset is generated. After which,
+    following statements are compiled as above.
 
     After each statement has been translated into either bytes or place holders,
     the second phase translates the place holders into appropriate byte-strings.
-    If there are no corresponding bytes for the gadget in the library, then the
-    search backtracks potentially up to the translation of the problematic jump
-    statement in the first phase and guesses a different size. The backtracking
-    process also considers different statement to gadget and gadget to byte
-    translations on the way back to retranslating the problematic jump. This
-    allows for the target byte offset to change without having to throw away all
-    of the translations after the problematic jump.
+    If there are no corresponding bytes for the placeholder in the library, then
+    the search backtracks potentially up to the translation of the problematic
+    jump statement in the first phase and guesses a different size. The
+    backtracking process also considers different statement to gadget and gadget
+    to byte translations on the way back to retranslating the problematic jump.
+    This allows for the target byte offset to change without having to throw
+    away all of the translations after the problematic jump.
 
     \section{Scaffolding}
 

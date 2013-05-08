@@ -1,5 +1,5 @@
-Senior Project
-==============
+Igor
+====
 
 All of the files related to my senior project. The `paper/` directory contains
 the draft of my final paper. The `src/` directory contains the implementation of

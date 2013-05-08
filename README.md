@@ -1,11 +1,9 @@
 Igor
 ====
 
-All of the files related to my senior project. The `paper/` directory contains
-the draft of my final paper. The `src/` directory contains the implementation of
-a gadget-based metamorphic engine inspired by return-oriented programming
-techniques and the Frankenstein metamorphic system [1]. To quote from the
-abstract of my paper:
+The implementation of a gadget-based metamorphic engine inspired by
+return-oriented programming techniques and the Frankenstein metamorphic system [1].
+To quote from the abstract of my paper:
 
 >    This paper presents the design and implementation of a metamorphic engine
 >    intended to be capable of evading current commercial classification methods,
